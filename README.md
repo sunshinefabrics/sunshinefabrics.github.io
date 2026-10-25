@@ -99,9 +99,15 @@ it read anything else in your Drive.
 
 1. **APIs & Services** → **Credentials** → **Create Credentials** → **OAuth client ID**
 2. Application type **Web application**
-3. Under **Authorised JavaScript origins** → **Add URI**, enter the exact address
-   the software is hosted at, for example `https://stock.sunshinefabrics.in`
-   — no trailing slash, no path. Add `http://localhost:8000` too if you test locally.
+3. Under **Authorised JavaScript origins** → **Add URI**, enter exactly:
+
+   ```
+   https://sunshinefabrics.github.io
+   ```
+
+   No trailing slash, no `/index.html`. If it is ever moved to another address,
+   add that one too. The Setup tab always shows the address to use, read from
+   wherever the software is actually running.
 4. **Create**, then copy the **Client ID** (it ends in `.apps.googleusercontent.com`)
 
 ### 5. Paste it in
@@ -122,14 +128,23 @@ under the heading.
 
 ### Using it day to day
 
-- Press **Connect Google Drive** once. Pick the Google account.
-- After that it saves by itself a few seconds after each change.
-- Google signs you out after about an hour. The bar then says **Reconnect**, and
+Everything to do with Drive lives at the top of the **Setup** tab, and the bar
+under the heading mirrors it.
+
+| Button | What it does |
+|---|---|
+| **Connect Google Drive** | Signs in. Pulls whatever is already in Drive and merges it with this device. |
+| **Sync now** | Pushes this device's changes up straight away, without waiting. |
+| **Refresh from Drive** | Pulls the Drive copy and merges it in. Press this when someone has been entering on another device. |
+| **Disconnect** | Stops syncing. The register stays on this device. |
+
+- After connecting, it also saves by itself a few seconds after each change.
+- Google signs you out after about an hour. The bar then says **Reconnect** and
   shows how many changes are waiting. They are safe on the device; press
   Reconnect and they go up. A browser-only app cannot avoid this — staying
   signed in permanently would need a server.
 - On a second device, sign in with the same Google account and press Connect.
-  The two registers merge.
+  The two registers merge; neither one's entries are lost.
 
 ### If two devices issue the same slip number
 

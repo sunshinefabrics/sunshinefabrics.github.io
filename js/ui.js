@@ -79,18 +79,64 @@ function renderSync(s){
   pend.textContent = n > 0 ? (n + " change" + (n === 1 ? "" : "s") + " waiting to sync") : "";
   pend.hidden = n <= 0;
 
-  btn.hidden = (s.status === "off");
+  // With no Client ID there is nothing to connect to yet, so the button
+  // sends the user to Setup where it is explained, rather than vanishing.
+  btn.hidden = false;
   btn.disabled = !!s.busy;
-  btn.textContent = (s.status === "connected") ? "Sync now"
+  btn.textContent = (s.status === "off")       ? "Set up Drive"
+                  : (s.status === "connected") ? "Sync now"
                   : (s.status === "expired")   ? "Reconnect"
                   : "Connect Google Drive";
   btn.onclick = function(){
-    if(s.status === "connected") Drive.sync(true);
-    else Drive.connect();
+    if(s.status === "off")            showView("setup");
+    else if(s.status === "connected") Drive.sync(true, false);
+    else                              Drive.connect();
   };
 
   var last = $("#syncLast");
   last.textContent = s.lastSync ? "Last sync " + new Date(s.lastSync).toLocaleTimeString() : "";
+
+  if(!$("#view-setup").hidden) renderDrivePanel(s);
+}
+
+/* The Setup tab is the place where Drive is actually managed. */
+function renderDrivePanel(s){
+  s = s || Drive.status();
+
+  $("#driveNotSetUp").hidden = s.configured;
+  $("#driveSetUp").hidden    = !s.configured;
+  $("#originBox").textContent = location.origin;
+
+  var dot = $("#setupDot"), label = $("#setupState");
+  var cls = "dot", word = "Not set up";
+  if(s.busy)                        { cls += " busy"; word = "Working"; }
+  else if(s.status === "connected") { cls += " ok";   word = "Connected"; }
+  else if(s.status === "expired")   { cls += " warn"; word = "Reconnect needed"; }
+  else if(s.status === "error")     { cls += " bad";  word = "Problem"; }
+  else if(s.status === "ready")     {                 word = "Not connected"; }
+  dot.className = cls;
+  label.textContent = word;
+
+  if(!s.configured){ $("#driveLastLine").textContent = ""; return; }
+
+  $("#driveStatusLine").textContent = s.message || "";
+
+  // A sync in progress means we are signed in, so Connect stays away.
+  var connected = (s.status === "connected" || s.status === "syncing" || s.busy);
+  var connectBtn = $("#driveConnect");
+  connectBtn.textContent = (s.status === "expired") ? "Reconnect Google Drive" : "Connect Google Drive";
+  connectBtn.hidden = connected;
+  connectBtn.disabled = !!s.busy;
+
+  $("#driveSync").hidden     = !connected;
+  $("#driveRefresh").hidden  = !connected;
+  $("#disconnectDrive").hidden = !connected;
+  $("#driveSync").disabled = $("#driveRefresh").disabled = !!s.busy;
+
+  var bits = [];
+  if(s.lastSync) bits.push("Last sync " + new Date(s.lastSync).toLocaleString());
+  if(s.pending > 0) bits.push(s.pending + " change" + (s.pending === 1 ? "" : "s") + " waiting to go up");
+  $("#driveLastLine").textContent = bits.join(" · ");
 }
 
 /* ================= shared pickers ================= */
@@ -770,7 +816,7 @@ function showView(name){
   $$(".tabs button").forEach(function(b){ b.setAttribute("aria-selected", String(b.dataset.view === name)); });
   if(name === "stock")   renderStock();
   if(name === "history") renderHistory();
-  if(name === "setup"){ renderQualities(); renderBackupInfo(); renderPwState(); }
+  if(name === "setup"){ renderQualities(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
   if(name === "outward" && !$("#outLines .line")) addLine();
 }
 
@@ -784,7 +830,7 @@ function refreshAll(){
   renderRecentIn();
   if(!$("#view-stock").hidden)   renderStock();
   if(!$("#view-history").hidden) renderHistory();
-  if(!$("#view-setup").hidden){ renderQualities(); renderBackupInfo(); renderPwState(); }
+  if(!$("#view-setup").hidden){ renderQualities(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
 }
 
 function openApp(){
@@ -860,6 +906,9 @@ function init(){
       Store.setLock(null); renderPwState(); toast("Password removed");
     }
   });
+  $("#driveConnect").addEventListener("click", function(){ Drive.connect(); });
+  $("#driveSync").addEventListener("click", function(){ Drive.sync(true, false); });
+  $("#driveRefresh").addEventListener("click", function(){ Drive.sync(true, true); });
   $("#disconnectDrive").addEventListener("click", function(){
     if(confirm("Disconnect Google Drive?\n\nThe register stays on this device.")) Drive.disconnect();
   });
@@ -891,6 +940,7 @@ if(document.readyState === "loading") document.addEventListener("DOMContentLoade
 else init();
 
 /* exposed for the browser console and for tests */
-global.UI = { showView:showView, refreshAll:refreshAll, printSlip:printSlip, historyRows:historyRows, csvCell:csvCell };
+global.UI = { showView:showView, refreshAll:refreshAll, printSlip:printSlip,
+              historyRows:historyRows, csvCell:csvCell, renderDrivePanel:renderDrivePanel };
 
 })(window);

@@ -188,7 +188,7 @@ function connect(){
   if(!cfg.googleClientId){ set("off", "Running on this device only."); return Promise.resolve(false); }
   set("connecting", "Waiting for Google...");
   return requestToken(true)
-    .then(function(){ return sync(true); })
+    .then(function(){ return sync(true, true); })   // first connect always pulls what is already there
     .catch(function(e){ set("ready", e.message); return false; });
 }
 
@@ -203,7 +203,10 @@ function disconnect(){
 }
 
 /* ---------------- the sync itself ---------------- */
-function sync(interactive){
+/* interactive - may show Google's popup (must come from a click)
+   force       - always pull and merge first, even if Drive looks
+                 unchanged. Used by Connect and by "Refresh from Drive". */
+function sync(interactive, force){
   if(!cfg.googleClientId) return Promise.resolve(false);
   if(state.busy) return Promise.resolve(false);
 
@@ -212,13 +215,13 @@ function sync(interactive){
       set("expired", "Sign-in has expired. Changes are saved here and waiting.");
       return Promise.resolve(false);
     }
-    return requestToken(true).then(function(){ return runSync(); })
+    return requestToken(true).then(function(){ return runSync(force); })
       .catch(function(e){ set("expired", e.message); return false; });
   }
-  return runSync();
+  return runSync(force);
 }
 
-function runSync(){
+function runSync(force){
   state.busy = true;
   set("syncing", "Syncing...");
   var revAtStart = Store.db().rev;
@@ -236,7 +239,7 @@ function runSync(){
       }
       var lastSeen = lsGet(VER_KEY);
       // Pull and merge whenever Drive has moved on since our last sync.
-      if(String(file.version || "") !== String(lastSeen || "")){
+      if(force || String(file.version || "") !== String(lastSeen || "")){
         return downloadFile(file.id).then(function(remote){
           if(remote){
             merged = Store.mergeRemote(remote);

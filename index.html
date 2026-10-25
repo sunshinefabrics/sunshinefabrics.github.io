@@ -174,6 +174,57 @@
   <!-- ---------------- SETUP ---------------- -->
   <section class="view" id="view-setup" hidden>
     <div class="panel">
+      <div class="panel-head">
+        <h2>Google Drive</h2>
+        <span class="spacer"></span>
+        <span class="dot" id="setupDot"></span>
+        <span class="eyebrow" id="setupState">Not set up</span>
+      </div>
+      <div class="panel-body">
+
+        <!-- shown when no Client ID has been put in js/config.js -->
+        <div id="driveNotSetUp" hidden>
+          <div class="notice notice-warn" style="margin-top:0">
+            <strong>Google Drive is not switched on yet.</strong>
+            The register is saving on this device only.
+          </div>
+          <p class="hint" style="margin-top:0">To switch it on, do these two things once:</p>
+          <ol class="hint" style="margin:0 0 12px;padding-left:20px;line-height:1.8">
+            <li>In the Google Cloud Console, create an <strong>OAuth Client ID</strong> of type
+                <strong>Web application</strong>, and under <strong>Authorised JavaScript origins</strong>
+                add exactly this address:
+                <br><code id="originBox" style="display:inline-block;margin-top:4px;padding:3px 7px;background:#f4f3f0;border:1px solid var(--rule-mid);border-radius:2px;font-size:12px"></code>
+            </li>
+            <li>Paste the Client ID into <code>js/config.js</code>, on the
+                <code>googleClientId</code> line, then upload that file again.</li>
+          </ol>
+          <p class="hint">Full steps are in <strong>README.md</strong>. The Client ID is public by design &mdash;
+             it is safe in that file, because Google only accepts it from the address above.</p>
+        </div>
+
+        <!-- shown once a Client ID is present -->
+        <div id="driveSetUp" hidden>
+          <p class="hint" style="margin-top:0" id="driveStatusLine"></p>
+          <div class="btn-row">
+            <button class="btn-primary" type="button" id="driveConnect">Connect Google Drive</button>
+            <button class="btn" type="button" id="driveSync">Sync now</button>
+            <button class="btn" type="button" id="driveRefresh">Refresh from Drive</button>
+            <button class="btn-danger" type="button" id="disconnectDrive">Disconnect</button>
+          </div>
+          <p class="hint" id="driveLastLine"></p>
+        </div>
+
+        <p class="hint">
+          The register is always saved on this device first, so nothing is lost if Drive is unreachable.
+          When connected it is also kept as one file in your Google Drive and merged with any other device
+          on the same account &mdash; entries are combined, never overwritten.
+          Google signs you out after about an hour; the bar at the top then says <strong>Reconnect</strong>,
+          and any changes made meanwhile are kept and sent when you press it.
+        </p>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Qualities</h2></div>
       <div class="panel-body">
         <div class="btn-row" style="margin-bottom:12px">
@@ -181,21 +232,6 @@
           <button class="btn" type="button" id="addQuality">Add</button>
         </div>
         <div class="tablewrap"><table id="qualityTable"></table></div>
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><h2>Google Drive</h2></div>
-      <div class="panel-body">
-        <p class="hint" style="margin-top:0">
-          The register is always saved on this device first, so nothing is lost if Drive is unreachable.
-          When connected, it is also kept as one file in your Google Drive and merged with any other device
-          using the same account. Google signs you out after about an hour, so the bar at the top will ask
-          you to reconnect &mdash; any changes made meanwhile are kept and sent when you do.
-        </p>
-        <div class="btn-row">
-          <button class="btn-danger" type="button" id="disconnectDrive">Disconnect Drive</button>
-        </div>
       </div>
     </div>
 
