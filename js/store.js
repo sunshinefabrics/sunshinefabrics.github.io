@@ -217,6 +217,104 @@ function totals(){
   return { in:i, out:o, bal:i-o };
 }
 
+/* ---------------- period reporting ----------------
+   A stock statement for a date range: what was on hand before it
+   started, what came in, what went out, and what is left. Because the
+   register is append-only, every one of these is just a sum over the
+   same entries the Stock tab uses, so the report can never tell a
+   different story from the rest of the software.                    */
+
+function isoDate(d){
+  var p = function(n){ return String(n).padStart(2,"0"); };
+  return d.getFullYear() + "-" + p(d.getMonth()+1) + "-" + p(d.getDate());
+}
+
+/* offset 0 = this month, -1 = last month, -2 = the one before */
+function monthRange(offset){
+  var now = new Date();
+  var start = new Date(now.getFullYear(), now.getMonth() + (offset||0), 1);
+  var end   = new Date(now.getFullYear(), now.getMonth() + (offset||0) + 1, 0);
+  return { from: isoDate(start), to: isoDate(end) };
+}
+
+function yearRange(){
+  var now = new Date();
+  return { from: isoDate(new Date(now.getFullYear(), 0, 1)), to: isoDate(now) };
+}
+
+/* The window to compare against. A whole calendar month compares with
+   the calendar month before it; any other range compares with the
+   same number of days immediately before it. */
+function previousRange(from, to){
+  if(!from || !to) return null;
+  var f = new Date(from + "T00:00:00"), t = new Date(to + "T00:00:00");
+  var lastOfMonth = new Date(f.getFullYear(), f.getMonth()+1, 0).getDate();
+  if(f.getDate() === 1 && t.getDate() === lastOfMonth && f.getMonth() === t.getMonth()){
+    var ps = new Date(f.getFullYear(), f.getMonth()-1, 1);
+    var pe = new Date(f.getFullYear(), f.getMonth(), 0);
+    return { from: isoDate(ps), to: isoDate(pe) };
+  }
+  var days = Math.round((t - f) / 86400000) + 1;
+  var pe2 = new Date(f.getTime() - 86400000);
+  var ps2 = new Date(pe2.getTime() - (days-1) * 86400000);
+  return { from: isoDate(ps2), to: isoDate(pe2) };
+}
+
+function periodSummary(from, to){
+  var rows = new Map(), parties = new Map();
+  var opening = 0, received = 0, issued = 0, undated = 0, counted = 0;
+
+  live().forEach(function(e){
+    var d = e.date || "";
+    if(!d) undated++;
+
+    var before   = from ? (d < from) : false;
+    var inPeriod = (!from || d >= from) && (!to || d <= to);
+    if(!before && !inPeriod) return;
+
+    var key = e.quality + "\u0000" + e.colour;
+    var r = rows.get(key);
+    if(!r){ r = { quality:e.quality, colour:e.colour, opening:0, received:0, issued:0 }; rows.set(key, r); }
+
+    var signed = (e.type === "IN" ? e.grams : -e.grams);
+    if(before){
+      r.opening += signed;
+      opening   += signed;
+      return;
+    }
+    counted++;
+    if(e.type === "IN"){ r.received += e.grams; received += e.grams; }
+    else               { r.issued   += e.grams; issued   += e.grams; }
+
+    if(e.party){
+      var p = parties.get(e.party);
+      if(!p){ p = { party:e.party, received:0, issued:0 }; parties.set(e.party, p); }
+      if(e.type === "IN") p.received += e.grams; else p.issued += e.grams;
+    }
+  });
+
+  var list = Array.from(rows.values()).map(function(r){
+    r.closing = r.opening + r.received - r.issued;
+    return r;
+  }).filter(function(r){
+    return r.opening || r.received || r.issued;   // drop rows with nothing to say
+  }).sort(function(a,b){
+    return a.quality.localeCompare(b.quality) || a.colour.localeCompare(b.colour);
+  });
+
+  return {
+    from: from, to: to,
+    opening: opening, received: received, issued: issued,
+    closing: opening + received - issued,
+    rows: list,
+    parties: Array.from(parties.values()).sort(function(a,b){
+      return (b.received + b.issued) - (a.received + a.issued);
+    }),
+    entryCount: counted,
+    undated: undated
+  };
+}
+
 function knownColours(){ return unique(db.entries.map(function(e){ return e.colour; }).filter(Boolean)).sort(); }
 function knownParties(){ return unique(db.entries.map(function(e){ return e.party;  }).filter(Boolean)).sort(); }
 
@@ -440,6 +538,12 @@ global.Store = {
   countForQuality: countForQuality,
   balanceForQuality: balanceForQuality,
   duplicateSlipNumbers: duplicateSlipNumbers,
+
+  // reporting
+  periodSummary: periodSummary,
+  monthRange: monthRange,
+  yearRange: yearRange,
+  previousRange: previousRange,
 
   // writes
   addInward: addInward,

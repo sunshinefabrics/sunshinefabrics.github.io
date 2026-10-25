@@ -147,6 +147,22 @@ tfoot td{border-top:1px solid var(--rule-dark);border-bottom:none;font-weight:60
 
 .empty{padding:26px 14px;text-align:center;color:var(--ink-3);font-size:13px}
 
+/* ---------- report figures ---------- */
+.stats{display:grid;gap:10px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-top:14px}
+.stat{border:1px solid var(--rule);border-radius:var(--r);padding:11px 13px;background:#fcfbf9}
+.stat .k{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-3)}
+.stat .v{font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.25;margin-top:3px}
+.stat .u{font-size:11px;font-weight:500;color:var(--ink-3);margin-left:3px}
+.stat .d{font-size:11px;margin-top:3px;font-variant-numeric:tabular-nums}
+.stat.in  .v{color:var(--in)}
+.stat.out .v{color:var(--out)}
+.stat.close{background:var(--navy-wash);border-color:#d8e1ea}
+.stat.close .v{color:var(--navy)}
+.stat .v.neg{color:var(--danger)}
+.up{color:var(--in)}
+.down{color:var(--out)}
+.flat{color:var(--ink-3)}
+
 /* ---------- outward slip ---------- */
 .line{border:1px solid var(--rule);border-radius:var(--r);padding:12px;margin-bottom:10px;background:#fcfbf9}
 .line-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}

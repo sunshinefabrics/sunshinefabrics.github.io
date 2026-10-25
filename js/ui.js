@@ -409,6 +409,182 @@ function renderStock(){
   ])]));
 }
 
+/* ================= reports ================= */
+var lastReport = null;          // kept so Print and CSV use the shown period
+
+function setPeriod(from, to){
+  $("#repFrom").value = from || "";
+  $("#repTo").value   = to || "";
+  renderReports();
+}
+
+function periodLabel(from, to){
+  if(!from && !to) return "all time";
+  if(from && to)   return dmy(from) + " to " + dmy(to);
+  return from ? ("from " + dmy(from)) : ("up to " + dmy(to));
+}
+
+function statCard(label, grams, cls, delta){
+  var v = el("div", { class:"v" + (grams < 0 ? " neg" : "") }, [
+    document.createTextNode(kg(grams)), el("span", { class:"u", text:"KG" })
+  ]);
+  return el("div", { class:"stat " + (cls||"") }, [
+    el("div", { class:"k", text:label }), v, delta || null
+  ]);
+}
+
+/* Change against the comparable window before this one. */
+function deltaNode(now, before, whatFor){
+  if(before === null || before === undefined) return null;
+  if(!before) return el("div", { class:"d flat", text: now ? "nothing in " + whatFor : "" });
+  var pct = Math.round(((now - before) / before) * 100);
+  var cls = pct > 0 ? "up" : (pct < 0 ? "down" : "flat");
+  var arrow = pct > 0 ? "↑" : (pct < 0 ? "↓" : "→");
+  return el("div", { class:"d " + cls,
+    text: arrow + " " + Math.abs(pct) + "% vs " + whatFor + " (" + kg(before) + ")" });
+}
+
+function renderReports(){
+  var from = $("#repFrom").value, to = $("#repTo").value;
+  var s = Store.periodSummary(from, to);
+  lastReport = s;
+
+  $("#repCaption").textContent =
+    periodLabel(from, to) + " — " + s.entryCount + " entr" + (s.entryCount === 1 ? "y" : "ies") + " in this period";
+
+  // undated entries carried over from the old software sit in opening
+  var warn = $("#repUndated"); warn.textContent = "";
+  if(s.undated){
+    warn.appendChild(el("div", { class:"notice notice-warn", style:"margin-top:10px", text:
+      s.undated + " entr" + (s.undated === 1 ? "y has" : "ies have") +
+      " no date, so they are counted in the opening balance rather than in any month. " +
+      "Give them a date in History to place them properly." }));
+  }
+
+  // comparison window
+  var prev = Store.previousRange(from, to);
+  var prevSum = prev ? Store.periodSummary(prev.from, prev.to) : null;
+  var prevName = prev ? periodLabel(prev.from, prev.to) : null;
+  if(prev && prev.from.slice(0,7) === prev.to.slice(0,7)){
+    prevName = new Date(prev.from + "T00:00:00").toLocaleDateString(undefined, { month:"long", year:"numeric" });
+  }
+
+  var stats = $("#repStats"); stats.textContent = "";
+  stats.appendChild(statCard("Opening balance", s.opening));
+  stats.appendChild(statCard("Received", s.received, "in",
+    prevSum ? deltaNode(s.received, prevSum.received, prevName) : null));
+  stats.appendChild(statCard("Issued", s.issued, "out",
+    prevSum ? deltaNode(s.issued, prevSum.issued, prevName) : null));
+  stats.appendChild(statCard("Closing balance", s.closing, "close"));
+
+  // ---- movement by quality ----
+  var t = $("#repRows"); t.textContent = "";
+  t.appendChild(el("thead", {}, [el("tr", {}, [
+    el("th", { text:"Quality" }), el("th", { text:"Colour" }),
+    el("th", { class:"r", text:"Opening" }), el("th", { class:"r", text:"Received" }),
+    el("th", { class:"r", text:"Issued" }), el("th", { class:"r", text:"Closing" })
+  ])]));
+
+  if(!s.rows.length){
+    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"6" },
+      [el("div", { class:"empty", text:"No movement in this period." })])])]));
+  }else{
+    var tb = el("tbody");
+    s.rows.forEach(function(r){
+      tb.appendChild(el("tr", {}, [
+        el("td", { text:r.quality }),
+        el("td", { text:r.colour }),
+        el("td", { class:"r muted", text:kg(r.opening) }),
+        el("td", { class:"r", text: r.received ? kg(r.received) : "—" }),
+        el("td", { class:"r", text: r.issued ? kg(r.issued) : "—" }),
+        el("td", { class:"r " + (r.closing < 0 ? "neg" : ""), text:kg(r.closing) })
+      ]));
+    });
+    t.appendChild(tb);
+    t.appendChild(el("tfoot", {}, [el("tr", {}, [
+      el("td", { colspan:"2", text:"Total — " + s.rows.length + " item" + (s.rows.length === 1 ? "" : "s") }),
+      el("td", { class:"r", text:kg(s.opening) }),
+      el("td", { class:"r", text:kg(s.received) }),
+      el("td", { class:"r", text:kg(s.issued) }),
+      el("td", { class:"r " + (s.closing < 0 ? "neg" : ""), text:kg(s.closing) })
+    ])]));
+  }
+
+  // ---- parties ----
+  var p = $("#repParties"); p.textContent = "";
+  p.appendChild(el("thead", {}, [el("tr", {}, [
+    el("th", { text:"Supplier / Customer" }),
+    el("th", { class:"r", text:"Received from" }), el("th", { class:"r", text:"Issued to" })
+  ])]));
+  if(!s.parties.length){
+    p.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"3" },
+      [el("div", { class:"empty", text:"No supplier or customer names recorded in this period." })])])]));
+  }else{
+    var pb = el("tbody");
+    s.parties.forEach(function(x){
+      pb.appendChild(el("tr", {}, [
+        el("td", { text:x.party }),
+        el("td", { class:"r", text: x.received ? kg(x.received) : "—" }),
+        el("td", { class:"r", text: x.issued ? kg(x.issued) : "—" })
+      ]));
+    });
+    p.appendChild(pb);
+  }
+}
+
+function reportCsv(){
+  var s = lastReport;
+  if(!s) return;
+  var head = ["Quality","Colour","Opening KG","Received KG","Issued KG","Closing KG"];
+  var body = s.rows.map(function(r){
+    return [r.quality, r.colour, kg(r.opening), kg(r.received), kg(r.issued), kg(r.closing)].map(csvCell).join(",");
+  });
+  body.push(["TOTAL","", kg(s.opening), kg(s.received), kg(s.issued), kg(s.closing)].map(csvCell).join(","));
+  var meta = [["Sunshine Fabrics — Stock Report"].map(csvCell).join(","),
+              ["Period", periodLabel(s.from, s.to)].map(csvCell).join(","), ""];
+  download("sunshine-fabrics-report-" + (s.from || "start") + "-to-" + (s.to || todayISO()) + ".csv",
+           "﻿" + meta.concat([head.map(csvCell).join(",")]).concat(body).join("\r\n"),
+           "text/csv;charset=utf-8");
+  toast("Report exported");
+}
+
+function printReport(){
+  var s = lastReport;
+  if(!s) return;
+  var tb = el("tbody");
+  s.rows.forEach(function(r){
+    tb.appendChild(el("tr", {}, [
+      el("td", { text:r.quality }), el("td", { text:r.colour }),
+      el("td", { class:"r", text:kg(r.opening) }), el("td", { class:"r", text:kg(r.received) }),
+      el("td", { class:"r", text:kg(r.issued) }), el("td", { class:"r", text:kg(r.closing) })
+    ]));
+  });
+  tb.appendChild(el("tr", {}, [
+    el("td", { text:"TOTAL" }), el("td", {}),
+    el("td", { class:"r", text:kg(s.opening) }), el("td", { class:"r", text:kg(s.received) }),
+    el("td", { class:"r", text:kg(s.issued) }), el("td", { class:"r", text:kg(s.closing) })
+  ]));
+
+  doPrint(el("div", { class:"slip" }, [
+    el("h2", { text:(SUNSHINE_CONFIG.businessName || "SUNSHINE FABRICS") }),
+    el("div", { class:"sub", text:"Stock Report — " + periodLabel(s.from, s.to) }),
+    el("div", { class:"meta" }, [
+      el("span", { text:"Opening: " + kg(s.opening) + " KG" }),
+      el("span", { text:"Received: " + kg(s.received) + " KG" }),
+      el("span", { text:"Issued: " + kg(s.issued) + " KG" })
+    ]),
+    el("table", {}, [
+      el("thead", {}, [el("tr", {}, [
+        el("th", { text:"Quality" }), el("th", { text:"Colour" }),
+        el("th", { class:"r", text:"Opening" }), el("th", { class:"r", text:"Received" }),
+        el("th", { class:"r", text:"Issued" }), el("th", { class:"r", text:"Closing" })
+      ])]),
+      tb
+    ]),
+    el("div", { class:"total", text:"Closing Balance: " + kg(s.closing) + " KG" })
+  ]));
+}
+
 /* ================= history ================= */
 function historyRows(){
   var from = $("#hFrom").value, to = $("#hTo").value,
@@ -815,6 +991,7 @@ function showView(name){
   $$(".view").forEach(function(v){ v.hidden = (v.id !== "view-" + name); });
   $$(".tabs button").forEach(function(b){ b.setAttribute("aria-selected", String(b.dataset.view === name)); });
   if(name === "stock")   renderStock();
+  if(name === "reports") renderReports();
   if(name === "history") renderHistory();
   if(name === "setup"){ renderQualities(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
   if(name === "outward" && !$("#outLines .line")) addLine();
@@ -829,6 +1006,7 @@ function refreshAll(){
   $("#outSlipNo").textContent = Store.db().nextSlip;
   renderRecentIn();
   if(!$("#view-stock").hidden)   renderStock();
+  if(!$("#view-reports").hidden) renderReports();
   if(!$("#view-history").hidden) renderHistory();
   if(!$("#view-setup").hidden){ renderQualities(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
 }
@@ -877,6 +1055,23 @@ function init(){
 
   $("#stockSearch").addEventListener("input", renderStock);
   $("#printStock").addEventListener("click", printStock);
+
+  // reports: start on the current month
+  var m = Store.monthRange(0);
+  $("#repFrom").value = m.from;
+  $("#repTo").value   = m.to;
+  $$("#view-reports [data-period]").forEach(function(b){
+    b.addEventListener("click", function(){
+      var r = b.dataset.period === "last" ? Store.monthRange(-1)
+            : b.dataset.period === "year" ? Store.yearRange()
+            : Store.monthRange(0);
+      setPeriod(r.from, r.to);
+    });
+  });
+  $("#repFrom").addEventListener("input", renderReports);
+  $("#repTo").addEventListener("input", renderReports);
+  $("#printReport").addEventListener("click", printReport);
+  $("#reportCsv").addEventListener("click", reportCsv);
 
   ["hFrom","hTo","hType","hSearch","hVoid"].forEach(function(id){
     $("#" + id).addEventListener("input", renderHistory);
@@ -941,6 +1136,7 @@ else init();
 
 /* exposed for the browser console and for tests */
 global.UI = { showView:showView, refreshAll:refreshAll, printSlip:printSlip,
-              historyRows:historyRows, csvCell:csvCell, renderDrivePanel:renderDrivePanel };
+              historyRows:historyRows, csvCell:csvCell, renderDrivePanel:renderDrivePanel,
+              renderReports:renderReports, setPeriod:setPeriod, printReport:printReport };
 
 })(window);
