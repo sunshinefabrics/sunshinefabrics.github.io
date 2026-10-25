@@ -15,6 +15,6 @@
 ------------------------------------------------------------------ */
 window.SUNSHINE_CONFIG = {
   businessName:  "SUNSHINE FABRICS",
-  googleClientId: "931060470290-n9r65mjnaumbgmop8k1fdjc8teclpvb2.apps.googleusercontent.com",
+  googleClientId: "280793711310-jdvsbvu0ur7ioqq20fjn8mrsl3m5ffcq.apps.googleusercontent.com",
   driveFileName: "sunshine-fabrics-register.json"
 };
