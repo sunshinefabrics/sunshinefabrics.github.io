@@ -95,10 +95,13 @@ function emptyDb(){
     entries: [],
     qualities: [],
     nextSlip: 1,
-    // When the counter was last restarted by hand. Slips issued before
-    // this moment are left out of the "next number" working, so a
-    // deliberate restart is not undone by old paperwork.
-    slipResetAt: null,
+    // Each restart of the slip counter opens a new "epoch". Slips carry
+    // the epoch they were issued under, so working out the next number
+    // only ever looks at the current one and a deliberate restart is not
+    // undone by old paperwork. A counter rather than a timestamp, because
+    // two events in the same millisecond cannot be told apart by time.
+    slipEpoch: 0,
+    slipResetAt: null,   // kept only to show when it last happened
     lock: null,
     lastBackup: null,
     rev: 0,          // bumped on every local change
@@ -339,6 +342,7 @@ function newEntry(fields){
     party:"", remarks:"", slipNo:null, slipId:null,
     createdAt: now, updatedAt: now,
     voidedAt:null, voidReason:"", correctsId:null, forced:false, note:"",
+    slipEpoch: db.slipEpoch || 0,
     device: deviceId()
   }, fields);
 }
@@ -442,6 +446,7 @@ function mergeRemote(remote){
 
   var wasQualities = db.qualities.join("\u0000"),
       wasSlip      = db.nextSlip,
+      wasEpoch     = db.slipEpoch || 0,
       wasBackup    = db.lastBackup,
       wasLock      = db.lock;
 
@@ -478,13 +483,14 @@ function mergeRemote(remote){
   var conflicts = duplicateSlipNumbers();
   // Whichever side restarted the counter most recently wins, so a reset
   // made on one device is not reversed by another device's older slips.
-  var localReset  = db.slipResetAt || "";
-  var remoteReset = remote.slipResetAt || "";
-  if(remoteReset > localReset){
-    db.slipResetAt = remote.slipResetAt;
+  var localEpoch  = db.slipEpoch || 0;
+  var remoteEpoch = remote.slipEpoch || 0;
+  if(remoteEpoch > localEpoch){
+    db.slipEpoch = remoteEpoch;
+    db.slipResetAt = remote.slipResetAt || db.slipResetAt;
     db.nextSlip = remote.nextSlip || 1;
-  }else if(localReset > remoteReset){
-    // keep ours as it stands
+  }else if(localEpoch > remoteEpoch){
+    // our restart is the more recent one - keep our counter
   }else{
     db.nextSlip = Math.max(db.nextSlip, remote.nextSlip || 1);
   }
@@ -496,6 +502,7 @@ function mergeRemote(remote){
   var changed = added > 0 || voided > 0 ||
                 db.qualities.join("\u0000") !== wasQualities ||
                 db.nextSlip !== wasSlip ||
+                (db.slipEpoch || 0) !== wasEpoch ||
                 db.lastBackup !== wasBackup ||
                 db.lock !== wasLock;
   if(changed) persist(); else persistQuiet();
@@ -507,10 +514,10 @@ function mergeRemote(remote){
    before a restart are deliberately ignored, which is what lets the
    numbering begin again at 1. */
 function highestSlipNo(){
-  var since = db.slipResetAt || "";
+  var epoch = db.slipEpoch || 0;
   return db.entries.reduce(function(m,e){
     if(e.slipNo == null) return m;
-    if(since && (e.createdAt || "") < since) return m;
+    if((e.slipEpoch || 0) !== epoch) return m;   // issued before a restart
     return e.slipNo > m ? e.slipNo : m;
   }, 0);
 }
@@ -526,6 +533,7 @@ function resetSlipNumber(startAt){
   var n = parseInt(startAt, 10);
   if(!Number.isFinite(n) || n < 1) n = 1;
   db.nextSlip = n;
+  db.slipEpoch = (db.slipEpoch || 0) + 1;
   db.slipResetAt = new Date().toISOString();
   persist();
   return n;
