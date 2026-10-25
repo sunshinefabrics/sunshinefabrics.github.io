@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1d3f5e">
+<meta name="description" content="Sunshine Fabrics - inward and outward stock register for quality, colour and quantity.">
+<title>Sunshine Fabrics — Stock Register</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='2' fill='%231d3f5e'/><path d='M3 4.5h10M3 8h10M3 11.5h6' stroke='white' stroke-width='1.4' stroke-linecap='round'/></svg>">
+<link rel="stylesheet" href="css/app.css">
+</head>
+
+<body>
+
+<!-- =========================== LOCK =========================== -->
+<div id="lock" hidden>
+  <form class="card" id="lockForm">
+    <div class="brand">
+      <span class="mark">SF</span>
+      <span><span class="brand-name">SUNSHINE FABRICS</span><span class="brand-sub">Stock Register</span></span>
+    </div>
+    <p lang="hi">आगे बढ़ने के लिए Password डालें।</p>
+    <label for="lockPw">Password</label>
+    <input id="lockPw" type="password" autocomplete="current-password">
+    <div id="lockMsg" class="hint hint-bad" hidden></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn-primary" type="submit" style="flex:1">Unlock</button>
+    </div>
+  </form>
+</div>
+
+<!-- =========================== APP =========================== -->
+<div id="app" hidden>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">SF</span>
+    <span><span class="brand-name">SUNSHINE FABRICS</span><span class="brand-sub">Stock Register</span></span>
+  </div>
+  <div class="totals num">
+    <div><div class="k">Received</div><div class="v" id="hdrIn">0.00</div></div>
+    <div><div class="k">Issued</div><div class="v" id="hdrOut">0.00</div></div>
+    <div><div class="k">Balance</div><div class="v" id="hdrBal">0.00</div></div>
+  </div>
+</header>
+
+<div class="syncbar">
+  <span class="dot" id="syncDot"></span>
+  <span id="syncText">Saved on this device.</span>
+  <span class="pending" id="syncPending" hidden></span>
+  <span class="spacer"></span>
+  <span class="muted" id="syncLast"></span>
+  <button class="btn btn-sm" type="button" id="syncBtn" hidden>Connect Google Drive</button>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button role="tab" data-view="inward"  aria-selected="true">Inward</button>
+  <button role="tab" data-view="outward" aria-selected="false">Outward</button>
+  <button role="tab" data-view="stock"   aria-selected="false">Stock</button>
+  <button role="tab" data-view="history" aria-selected="false">History</button>
+  <button role="tab" data-view="setup"   aria-selected="false">Setup</button>
+</nav>
+
+<main>
+  <div id="storageWarn" class="notice notice-bad" hidden></div>
+
+  <!-- ---------------- INWARD ---------------- -->
+  <section class="view" id="view-inward">
+    <form class="panel" id="inForm">
+      <div class="panel-head"><h2>Record Inward</h2><span class="eyebrow spacer" lang="hi">माल आया</span></div>
+      <div class="panel-body">
+        <div class="grid">
+          <div><label for="inDate" class="req">Date</label><input id="inDate" type="date" required></div>
+          <div><label for="inParty">Supplier / Mill</label><input id="inParty" list="partyList" autocomplete="off" placeholder="optional"></div>
+          <div><label for="inQuality" class="req">Quality</label><select id="inQuality" required></select></div>
+          <div>
+            <label for="inColour" class="req">Colour</label>
+            <input id="inColour" list="colourList" required autocomplete="off">
+            <div class="hint" id="inColourHint"></div>
+          </div>
+          <div><label for="inQty" class="req">Quantity (KG)</label><input id="inQty" type="number" step="0.01" min="0.01" inputmode="decimal" required></div>
+          <div class="grid-full"><label for="inRemarks">Remarks</label><textarea id="inRemarks" rows="2"></textarea></div>
+        </div>
+        <div id="inErr" class="notice notice-bad" hidden style="margin-top:12px"></div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn-primary" type="submit">Save Inward</button>
+          <button class="btn" type="reset">Clear</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Recent Inward</h2><span class="eyebrow spacer">Last 10</span></div>
+      <div class="tablewrap"><table id="recentIn"></table></div>
+    </div>
+  </section>
+
+  <!-- ---------------- OUTWARD ---------------- -->
+  <section class="view" id="view-outward" hidden>
+    <form class="panel" id="outForm">
+      <div class="panel-head"><h2>Issue Outward Slip</h2><span class="eyebrow spacer" lang="hi">माल भेजा</span></div>
+      <div class="panel-body">
+
+        <div class="slipbar">
+          <div><div class="eyebrow">Slip No.</div><div class="big" id="outSlipNo">—</div></div>
+          <div style="min-width:140px"><label for="outDate" class="req">Date</label><input id="outDate" type="date" required></div>
+          <div style="min-width:170px;flex:1"><label for="outParty">Customer</label><input id="outParty" list="partyList" autocomplete="off" placeholder="optional"></div>
+          <div style="margin-left:auto;text-align:right"><div class="eyebrow">Slip Total</div><div class="big num" id="outTotal">0.00</div></div>
+        </div>
+
+        <div id="outLines"></div>
+        <div class="btn-row"><button class="btn" type="button" id="addLine">+ Add Item</button></div>
+
+        <div id="outErr" class="notice notice-bad" hidden style="margin-top:12px"></div>
+        <div class="btn-row" style="margin-top:14px">
+          <button class="btn-primary" type="submit">Save Slip</button>
+        </div>
+      </div>
+    </form>
+
+    <div class="panel" id="lastSlipPanel" hidden>
+      <div class="panel-body">
+        <div class="notice notice-ok" style="margin:0">
+          <strong>Slip <span id="lastSlipNo"></span> saved.</strong>
+          <span class="num" id="lastSlipTotal"></span> KG.
+          <div class="btn-row" style="margin-top:9px">
+            <button class="btn" type="button" id="printLast">Print A5 Slip</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- STOCK ---------------- -->
+  <section class="view" id="view-stock" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Current Stock</h2>
+        <div class="spacer btn-row">
+          <input id="stockSearch" placeholder="Search quality or colour" style="width:200px" autocomplete="off">
+          <button class="btn btn-sm" type="button" id="printStock">Print</button>
+        </div>
+      </div>
+      <div class="tablewrap"><table id="stockTable"></table></div>
+    </div>
+    <p class="hint">Stock is worked out from the register. Nothing here can be deleted directly &mdash; correct or void an entry in <strong>History</strong> and this updates by itself.</p>
+  </section>
+
+  <!-- ---------------- HISTORY ---------------- -->
+  <section class="view" id="view-history" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>History</h2><span class="eyebrow spacer">Full register</span></div>
+      <div class="panel-body">
+        <div class="grid">
+          <div><label for="hFrom">From</label><input id="hFrom" type="date"></div>
+          <div><label for="hTo">To</label><input id="hTo" type="date"></div>
+          <div><label for="hType">Type</label><select id="hType">
+            <option value="">All</option><option value="IN">Inward</option><option value="OUT">Outward</option>
+          </select></div>
+          <div><label for="hSearch">Search</label><input id="hSearch" placeholder="quality, colour, party, slip" autocomplete="off"></div>
+        </div>
+        <div class="btn-row" style="margin-top:12px">
+          <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500">
+            <input type="checkbox" id="hVoid" style="width:auto"> Show voided entries
+          </label>
+          <span class="spacer"></span>
+          <button class="btn btn-sm" type="button" id="exportCsv">Export CSV</button>
+        </div>
+      </div>
+      <div class="tablewrap"><table id="histTable"></table></div>
+    </div>
+  </section>
+
+  <!-- ---------------- SETUP ---------------- -->
+  <section class="view" id="view-setup" hidden>
+    <div class="panel">
+      <div class="panel-head"><h2>Qualities</h2></div>
+      <div class="panel-body">
+        <div class="btn-row" style="margin-bottom:12px">
+          <input id="newQuality" placeholder="New quality name" style="max-width:260px" autocomplete="off">
+          <button class="btn" type="button" id="addQuality">Add</button>
+        </div>
+        <div class="tablewrap"><table id="qualityTable"></table></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Google Drive</h2></div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">
+          The register is always saved on this device first, so nothing is lost if Drive is unreachable.
+          When connected, it is also kept as one file in your Google Drive and merged with any other device
+          using the same account. Google signs you out after about an hour, so the bar at the top will ask
+          you to reconnect &mdash; any changes made meanwhile are kept and sent when you do.
+        </p>
+        <div class="btn-row">
+          <button class="btn-danger" type="button" id="disconnectDrive">Disconnect Drive</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Backup</h2></div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">A downloaded backup is the copy that does not depend on this browser or on Google. Take one regularly.</p>
+        <div class="btn-row">
+          <button class="btn-primary" type="button" id="backupBtn">Download Backup</button>
+          <button class="btn" type="button" id="restoreBtn">Restore from Backup</button>
+          <input type="file" id="restoreFile" accept="application/json,.json" hidden>
+        </div>
+        <p class="hint" id="backupInfo"></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>App Lock</h2></div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">
+          A password keeps the register closed on a shared counter. It is stored on this device as a hash,
+          not as plain text. It is a deterrent only &mdash; anyone with the files and some technical skill can
+          still read the data. Real protection needs a server login.
+        </p>
+        <div class="btn-row">
+          <button class="btn" type="button" id="setPw">Set / Change Password</button>
+          <button class="btn-danger" type="button" id="clearPw">Remove Password</button>
+        </div>
+        <p class="hint" id="pwState"></p>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<datalist id="colourList"></datalist>
+<datalist id="partyList"></datalist>
+
+<div class="modal" id="modal" hidden><div class="card" id="modalCard"></div></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="printArea"></div>
+
+<!-- Google sign-in. Only used when a Client ID is set in js/config.js. -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
+<!-- Plain scripts, not modules, so the software also runs when the
+     files are opened directly from a folder with no web server. -->
+<script src="js/config.js"></script>
+<script src="js/store.js"></script>
+<script src="js/drive.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
