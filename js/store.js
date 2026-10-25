@@ -338,6 +338,11 @@ function balanceForQuality(q){
 function mergeRemote(remote){
   if(!remote || !Array.isArray(remote.entries)) return { added:0, voided:0, conflicts:[] };
 
+  var wasQualities = db.qualities.join("\u0000"),
+      wasSlip      = db.nextSlip,
+      wasBackup    = db.lastBackup,
+      wasLock      = db.lock;
+
   var byId = new Map();
   db.entries.forEach(function(e){ byId.set(e.id, e); });
 
@@ -374,8 +379,16 @@ function mergeRemote(remote){
   }, 0);
   db.nextSlip = Math.max(db.nextSlip, remote.nextSlip || 1, highest + 1);
 
-  persist();
-  return { added:added, voided:voided, conflicts:conflicts };
+  // A merge that brought nothing new is not a change, and must not
+  // count as one - otherwise every sync leaves a change "waiting".
+  var changed = added > 0 || voided > 0 ||
+                db.qualities.join("\u0000") !== wasQualities ||
+                db.nextSlip !== wasSlip ||
+                db.lastBackup !== wasBackup ||
+                db.lock !== wasLock;
+  if(changed) persist(); else persistQuiet();
+
+  return { added:added, voided:voided, conflicts:conflicts, changed:changed };
 }
 
 function duplicateSlipNumbers(){

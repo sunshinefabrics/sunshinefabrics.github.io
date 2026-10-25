@@ -246,14 +246,24 @@ function sync(interactive, force){
 function runSync(force){
   state.busy = true;
   set("syncing", "Syncing...");
-  var revAtStart = Store.db().rev;
   var merged = null;
+  var uploadedRev = null;
+
+  /* Read the register and its revision number together, so what we
+     mark as synced is exactly what went up. Taking the revision any
+     earlier - before a merge, say - leaves a change that has already
+     been uploaded still showing as waiting. */
+  function payload(){
+    var snap = { rev: Store.db().rev, data: Store.snapshot() };
+    uploadedRev = snap.rev;
+    return snap.data;
+  }
 
   return findFile()
     .then(function(file){
       if(!file){
         // nothing in Drive yet - this device seeds it
-        return createFile(Store.snapshot()).then(function(created){
+        return createFile(payload()).then(function(created){
           lsSet(FILE_KEY, created.id);
           lsSet(VER_KEY, String(created.version || ""));
           return { seeded:true };
@@ -266,19 +276,20 @@ function runSync(force){
           if(remote){
             merged = Store.mergeRemote(remote);
           }
-          return updateFile(file.id, Store.snapshot()).then(function(saved){
+          // payload() is read after the merge, so it carries both sides
+          return updateFile(file.id, payload()).then(function(saved){
             lsSet(VER_KEY, String(saved.version || ""));
             return { merged:merged };
           });
         });
       }
-      return updateFile(file.id, Store.snapshot()).then(function(saved){
+      return updateFile(file.id, payload()).then(function(saved){
         lsSet(VER_KEY, String(saved.version || ""));
         return {};
       });
     })
     .then(function(result){
-      Store.markSynced(revAtStart);
+      Store.markSynced(uploadedRev);
       state.lastSync = new Date().toISOString();
       state.busy = false;
 
