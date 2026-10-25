@@ -27,6 +27,7 @@ var VER_KEY  = "sunshineFabrics.driveVersion";
 var cfg        = global.SUNSHINE_CONFIG || {};
 var tokenClient = null;
 var token      = null;     // { value, expiresAt }
+var everSignedIn = false;  // so we say "Connect" first time and "Reconnect" after
 var state      = { status:"off", message:"", lastSync:null, busy:false };
 var listeners  = [];
 var saveTimer  = null;
@@ -92,13 +93,14 @@ function requestToken(interactive){
     tokenClient.callback = function(res){
       if(res && res.access_token){
         token = { value: res.access_token, expiresAt: Date.now() + ((res.expires_in || 3600) - 60) * 1000 };
+        everSignedIn = true;
         resolve(token);
       }else{
         reject(new Error((res && res.error) ? res.error : "Sign-in was cancelled."));
       }
     };
     tokenClient.error_callback = function(err){
-      reject(new Error((err && err.type) ? err.type : "Sign-in failed."));
+      reject(new Error(plainError(err && err.type)));
     };
     try{
       tokenClient.requestAccessToken({ prompt: interactive ? "" : "none" });
@@ -107,6 +109,24 @@ function requestToken(interactive){
 }
 
 function haveValidToken(){ return token && token.expiresAt > Date.now(); }
+
+/* Google's codes are no use to someone running a fabric shop. */
+function plainError(code){
+  switch(code){
+    case "popup_failed_to_open":
+      return "The Google sign-in window could not open. Allow pop-ups for this site, then try again.";
+    case "popup_closed":
+      return "Sign-in was closed before it finished.";
+    case "access_denied":
+      return "Google would not allow this account. Check it is listed under Test users, or publish the app.";
+    case "invalid_client":
+      return "Google did not recognise the Client ID. Check js/config.js and the authorised origins.";
+    case "idpiframe_initialization_failed":
+      return "Google sign-in could not start in this browser. Third-party cookies may be blocked.";
+    default:
+      return code ? ("Google sign-in failed (" + code + ").") : "Google sign-in failed.";
+  }
+}
 
 /* ---------------- HTTP ---------------- */
 function api(url, opts){
@@ -212,7 +232,9 @@ function sync(interactive, force){
 
   if(!haveValidToken()){
     if(!interactive){
-      set("expired", "Sign-in has expired. Changes are saved here and waiting.");
+      set(everSignedIn ? "expired" : "ready",
+          everSignedIn ? "Sign-in has expired. Changes are saved here and waiting."
+                       : "Not connected. Changes are saved on this device.");
       return Promise.resolve(false);
     }
     return requestToken(true).then(function(){ return runSync(force); })
@@ -288,7 +310,9 @@ function scheduleSync(){
   saveTimer = setTimeout(function(){
     if(Store.pendingChanges() <= 0) return;
     if(haveValidToken()) sync(false);
-    else set("expired", "Sign-in has expired. Changes are saved here and waiting.");
+    else if(everSignedIn) set("expired", "Sign-in has expired. Changes are saved here and waiting.");
+    // never signed in yet - leave the status alone rather than claiming
+    // something expired that was never connected
   }, 4000);
 }
 
