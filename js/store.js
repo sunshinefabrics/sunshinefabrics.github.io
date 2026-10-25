@@ -95,6 +95,10 @@ function emptyDb(){
     entries: [],
     qualities: [],
     nextSlip: 1,
+    // When the counter was last restarted by hand. Slips issued before
+    // this moment are left out of the "next number" working, so a
+    // deliberate restart is not undone by old paperwork.
+    slipResetAt: null,
     lock: null,
     lastBackup: null,
     rev: 0,          // bumped on every local change
@@ -472,10 +476,20 @@ function mergeRemote(remote){
   // offline can reach for the same number. Report any clash instead of
   // silently renumbering someone's paperwork.
   var conflicts = duplicateSlipNumbers();
-  var highest = db.entries.reduce(function(m,e){
-    return (e.slipNo != null && e.slipNo > m) ? e.slipNo : m;
-  }, 0);
-  db.nextSlip = Math.max(db.nextSlip, remote.nextSlip || 1, highest + 1);
+  // Whichever side restarted the counter most recently wins, so a reset
+  // made on one device is not reversed by another device's older slips.
+  var localReset  = db.slipResetAt || "";
+  var remoteReset = remote.slipResetAt || "";
+  if(remoteReset > localReset){
+    db.slipResetAt = remote.slipResetAt;
+    db.nextSlip = remote.nextSlip || 1;
+  }else if(localReset > remoteReset){
+    // keep ours as it stands
+  }else{
+    db.nextSlip = Math.max(db.nextSlip, remote.nextSlip || 1);
+  }
+  // Never hand out a number already used since the last restart.
+  db.nextSlip = Math.max(db.nextSlip, highestSlipNo() + 1);
 
   // A merge that brought nothing new is not a change, and must not
   // count as one - otherwise every sync leaves a change "waiting".
@@ -487,6 +501,34 @@ function mergeRemote(remote){
   if(changed) persist(); else persistQuiet();
 
   return { added:added, voided:voided, conflicts:conflicts, changed:changed };
+}
+
+/* The highest slip number issued SINCE the last restart. Slips from
+   before a restart are deliberately ignored, which is what lets the
+   numbering begin again at 1. */
+function highestSlipNo(){
+  var since = db.slipResetAt || "";
+  return db.entries.reduce(function(m,e){
+    if(e.slipNo == null) return m;
+    if(since && (e.createdAt || "") < since) return m;
+    return e.slipNo > m ? e.slipNo : m;
+  }, 0);
+}
+
+/* The highest number ever used, restarts included - for the warning. */
+function highestSlipNoEver(){
+  return db.entries.reduce(function(m,e){
+    return (e.slipNo != null && e.slipNo > m) ? e.slipNo : m;
+  }, 0);
+}
+
+function resetSlipNumber(startAt){
+  var n = parseInt(startAt, 10);
+  if(!Number.isFinite(n) || n < 1) n = 1;
+  db.nextSlip = n;
+  db.slipResetAt = new Date().toISOString();
+  persist();
+  return n;
 }
 
 function duplicateSlipNumbers(){
@@ -553,6 +595,8 @@ global.Store = {
   addQuality: addQuality,
   renameQuality: renameQuality,
   removeQuality: removeQuality,
+  resetSlipNumber: resetSlipNumber,
+  highestSlipNoEver: highestSlipNoEver,
 
   // sync bookkeeping
   mergeRemote: mergeRemote,

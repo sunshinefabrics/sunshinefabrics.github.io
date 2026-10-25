@@ -786,6 +786,44 @@ function openRename(q){
   input.focus(); input.select();
 }
 
+function renderSlipPanel(){
+  var d = Store.db();
+  $("#slipNext").textContent = d.nextSlip;
+
+  var start = parseInt($("#slipStart").value, 10);
+  if(!Number.isFinite(start) || start < 1) start = 1;
+  var highest = Store.highestSlipNoEver();
+  var w = $("#slipWarn");
+
+  if(highest >= start){
+    w.className = "hint hint-warn";
+    w.textContent = "Slips up to no. " + highest + " already exist. Restarting at " + start +
+      " means those numbers get used a second time — the date on the slip tells them apart.";
+  }else{
+    w.className = "hint";
+    w.textContent = d.slipResetAt
+      ? "Last restarted " + new Date(d.slipResetAt).toLocaleString() + "."
+      : "The count has never been restarted.";
+  }
+}
+
+function doSlipReset(){
+  var start = parseInt($("#slipStart").value, 10);
+  if(!Number.isFinite(start) || start < 1){ alert("Enter a number of 1 or more."); return; }
+
+  var highest = Store.highestSlipNoEver();
+  var msg = "Restart slip numbering at " + start + "?\n\nThe next slip saved will be no. " + start + ".";
+  if(highest >= start){
+    msg += "\n\nSlips up to no. " + highest + " already exist, so those numbers will be used again. " +
+           "Old slips keep their numbers and nothing in the register is changed.";
+  }
+  if(!confirm(msg)) return;
+
+  Store.resetSlipNumber(start);
+  renderSlipPanel();
+  toast("Slip numbering restarts at " + start);
+}
+
 function renderBackupInfo(){
   var d = Store.db();
   $("#backupInfo").textContent = d.lastBackup
@@ -993,7 +1031,7 @@ function showView(name){
   if(name === "stock")   renderStock();
   if(name === "reports") renderReports();
   if(name === "history") renderHistory();
-  if(name === "setup"){ renderQualities(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
+  if(name === "setup"){ renderQualities(); renderSlipPanel(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
   if(name === "outward" && !$("#outLines .line")) addLine();
 }
 
@@ -1008,7 +1046,7 @@ function refreshAll(){
   if(!$("#view-stock").hidden)   renderStock();
   if(!$("#view-reports").hidden) renderReports();
   if(!$("#view-history").hidden) renderHistory();
-  if(!$("#view-setup").hidden){ renderQualities(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
+  if(!$("#view-setup").hidden){ renderQualities(); renderSlipPanel(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
 }
 
 function openApp(){
@@ -1087,6 +1125,9 @@ function init(){
   $("#newQuality").addEventListener("keydown", function(e){
     if(e.key === "Enter"){ e.preventDefault(); $("#addQuality").click(); }
   });
+
+  $("#slipReset").addEventListener("click", doSlipReset);
+  $("#slipStart").addEventListener("input", renderSlipPanel);
 
   $("#backupBtn").addEventListener("click", backup);
   $("#restoreBtn").addEventListener("click", function(){ $("#restoreFile").click(); });

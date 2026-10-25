@@ -275,6 +275,25 @@
     </div>
 
     <div class="panel">
+      <div class="panel-head">
+        <h2>Slip Numbering</h2>
+        <span class="eyebrow spacer">Next slip <strong id="slipNext">&mdash;</strong></span>
+      </div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">
+          Outward slips are numbered in order. Restart the count when you begin a new slip book
+          or a new financial year.
+        </p>
+        <div class="btn-row">
+          <label for="slipStart" style="margin:0">Restart from</label>
+          <input id="slipStart" type="number" min="1" step="1" value="1" style="width:110px">
+          <button class="btn-danger" type="button" id="slipReset">Reset</button>
+        </div>
+        <p class="hint" id="slipWarn"></p>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Backup</h2></div>
       <div class="panel-body">
         <p class="hint" style="margin-top:0">A downloaded backup is the copy that does not depend on this browser or on Google. Take one regularly.</p>
