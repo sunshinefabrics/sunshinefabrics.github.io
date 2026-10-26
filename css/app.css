@@ -108,6 +108,22 @@ textarea{resize:vertical;min-height:38px}
 
 main{max-width:1080px;margin:0 auto;padding:16px}
 @media(max-width:600px){main{padding:12px}}
+
+/* ---------- phones and tablets ----------
+   A touch browser zooms the whole page in whenever a field smaller
+   than 16px is tapped, and does not zoom back out. On a day of
+   entering slips that is unusable, so on a touch screen the fields
+   are the size the browser is happy with. */
+@media(pointer:coarse){
+  input,select,textarea{font-size:16px;padding:10px}
+  button{padding:10px 14px;font-size:14px}
+  .btn-sm{padding:7px 11px;font-size:13px}
+  .tabs button{padding-top:13px;padding-bottom:13px}   /* a thumb-sized target */
+}
+/* all six tabs should fit a narrow phone rather than run off the edge */
+@media(max-width:430px){
+  .tabs button{padding-left:9px;padding-right:9px}
+}
 .view[hidden]{display:none}
 
 .panel{background:var(--card);border:1px solid var(--rule);border-radius:var(--r);margin-bottom:14px}

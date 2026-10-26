@@ -17,6 +17,7 @@
 
 var KEY         = "sunshineFabrics.v3";
 var DEVICE_KEY  = "sunshineFabrics.device";
+var REPLACED    = "sunshineFabrics.replaced";   // "the next write is a restore"
 var LEGACY_V2   = "sunshine.v2";
 var LEGACY_ROWS = "sunshine";
 var LEGACY_QUAL = "sunshineQualities";
@@ -103,6 +104,7 @@ function emptyDb(){
     slipEpoch: 0,
     slipResetAt: null,   // kept only to show when it last happened
     lock: null,
+    lockAt: null,    // when the password was last set or removed
     lastBackup: null,
     rev: 0,          // bumped on every local change
     syncedRev: 0     // the rev last pushed to Drive
@@ -111,16 +113,46 @@ function emptyDb(){
 
 function emit(){ listeners.forEach(function(f){ try{ f(); }catch(e){} }); }
 
+/* Every write stamps the stored copy with the tag of whoever made it,
+   so a tab can tell its own writing apart from another tab's. */
+var writeTag = "";
+
 /* Writes to this device first, always. Drive comes after. */
 function persist(){
   db.rev++;
+  commit(true);
+}
+/* for bookkeeping writes that are not register changes (e.g. sync marks) */
+function persistQuiet(){ commit(true); }
+
+/* Two tabs of the register share one localStorage, and each holds the
+   whole register in memory. Writing it out as it stands would throw
+   away whatever the other tab saved in the meantime - the same mistake
+   as overwriting Drive. So a write folds in what is on disk first,
+   using the same union as the Drive merge, and what goes out holds
+   both tabs' work.
+
+   Restoring a backup is the one write that must not do this: it is a
+   deliberate replacement, so it writes straight out. */
+function commit(foldOthersIn){
+  if(foldOthersIn) absorbOtherTabs();
+  writeTag = uid();
+  db.writeTag = writeTag;
   writeStore(KEY, JSON.stringify(db));
   emit();
 }
-/* for bookkeeping writes that are not register changes (e.g. sync marks) */
-function persistQuiet(){
-  writeStore(KEY, JSON.stringify(db));
-  emit();
+
+function absorbOtherTabs(){
+  var raw = readStore(KEY), other;
+  if(!raw) return false;
+  try{ other = JSON.parse(raw); }catch(e){ return false; }
+  if(!other || !Array.isArray(other.entries)) return false;
+  if(other.writeTag && other.writeTag === writeTag) return false;   // our own last write
+  var res = foldIn(other);
+  // Work taken on from the other tab may still be owed to Drive, so
+  // the revision only ever moves forward.
+  if(res.changed) db.rev = Math.max(db.rev, other.rev || 0);
+  return res.changed;
 }
 
 /* ---------------- load + migrate ---------------- */
@@ -357,6 +389,12 @@ function addInward(f){
 }
 
 function addSlip(lines, meta){
+  // Another tab on this device may have issued a slip since we last
+  // looked, and its news may not have reached us yet. Take what is on
+  // disk on board before choosing a number, so two tabs open at one
+  // counter never hand out the same one. Two separate devices working
+  // offline still can - that is reported after a merge instead.
+  absorbOtherTabs();
   var slipNo = db.nextSlip++;
   var slipId = uid();
   var now = new Date().toISOString();
@@ -442,7 +480,17 @@ function balanceForQuality(q){
    its own id. So two copies of the register can be combined by taking
    the union of their entries - no change is ever thrown away.        */
 function mergeRemote(remote){
-  if(!remote || !Array.isArray(remote.entries)) return { added:0, voided:0, conflicts:[] };
+  var res = foldIn(remote);
+  // A merge that brought nothing new is not a change, and must not
+  // count as one - otherwise every sync leaves a change "waiting".
+  if(res.changed) persist(); else persistQuiet();
+  return res;
+}
+
+/* The union itself, without writing anything. Used both for the copy
+   in Drive and for the copy another tab on this device left behind. */
+function foldIn(remote){
+  if(!remote || !Array.isArray(remote.entries)) return { added:0, voided:0, conflicts:[], changed:false };
 
   var wasQualities = db.qualities.join("\u0000"),
       wasSlip      = db.nextSlip,
@@ -475,7 +523,18 @@ function mergeRemote(remote){
 
   db.qualities = unique(db.qualities.concat(remote.qualities || [])).filter(Boolean).sort();
   db.lastBackup = maxStr(db.lastBackup, remote.lastBackup);
-  if(remote.lock && !db.lock) db.lock = remote.lock;
+
+  // Whoever changed the password last decides, so removing it on one
+  // device is not undone by another device's older copy. Copies made
+  // before this was recorded carry no time, and keep the old rule of
+  // never losing a password that is already set.
+  var mineAt = db.lockAt || "", theirsAt = remote.lockAt || "";
+  if(theirsAt && theirsAt > mineAt){
+    db.lock = remote.lock || null;
+    db.lockAt = theirsAt;
+  }else if(!theirsAt && !mineAt && remote.lock && !db.lock){
+    db.lock = remote.lock;
+  }
 
   // Slip numbers are handed out per device, so two devices working
   // offline can reach for the same number. Report any clash instead of
@@ -497,17 +556,36 @@ function mergeRemote(remote){
   // Never hand out a number already used since the last restart.
   db.nextSlip = Math.max(db.nextSlip, highestSlipNo() + 1);
 
-  // A merge that brought nothing new is not a change, and must not
-  // count as one - otherwise every sync leaves a change "waiting".
   var changed = added > 0 || voided > 0 ||
                 db.qualities.join("\u0000") !== wasQualities ||
                 db.nextSlip !== wasSlip ||
                 (db.slipEpoch || 0) !== wasEpoch ||
                 db.lastBackup !== wasBackup ||
                 db.lock !== wasLock;
-  if(changed) persist(); else persistQuiet();
 
   return { added:added, voided:voided, conflicts:conflicts, changed:changed };
+}
+
+/* Is there anything here that the copy passed in has not got? Asked
+   before pushing to Drive, so a device with nothing new to say leaves
+   the file alone instead of writing over somebody else's work. */
+function aheadOf(remote){
+  if(!remote || !Array.isArray(remote.entries)) return true;
+  var theirs = new Map();
+  remote.entries.forEach(function(e){ theirs.set(e.id, e); });
+  var ahead = db.entries.some(function(mine){
+    var r = theirs.get(mine.id);
+    if(!r) return true;
+    if(mine.voidedAt && !r.voidedAt) return true;
+    return (mine.updatedAt || "") > (r.updatedAt || "");
+  });
+  if(ahead) return true;
+  if((db.nextSlip || 1)  > (remote.nextSlip || 1))  return true;
+  if((db.slipEpoch || 0) > (remote.slipEpoch || 0)) return true;
+  if(maxStr(db.lastBackup, remote.lastBackup) !== (remote.lastBackup || null)) return true;
+  if((db.lockAt || "") > (remote.lockAt || "")) return true;
+  var rq = remote.qualities || [];
+  return db.qualities.some(function(q){ return rq.indexOf(q) < 0; });
 }
 
 /* The highest slip number issued SINCE the last restart. Slips from
@@ -539,12 +617,18 @@ function resetSlipNumber(startAt){
   return n;
 }
 
+/* Two slips sharing a number are only a clash within one slip book.
+   Restarting the count deliberately begins a new book, so slip 1 of
+   the new one is not a duplicate of slip 1 of the old - otherwise
+   every merge after a restart would cry wolf about numbers the user
+   reused on purpose. */
 function duplicateSlipNumbers(){
   var seen = new Map(), bad = [];
   db.entries.forEach(function(e){
     if(e.slipNo == null || !e.slipId) return;
-    var known = seen.get(e.slipNo);
-    if(!known){ seen.set(e.slipNo, e.slipId); }
+    var key = (e.slipEpoch || 0) + "\u0000" + e.slipNo;
+    var known = seen.get(key);
+    if(!known){ seen.set(key, e.slipId); }
     else if(known !== e.slipId && bad.indexOf(e.slipNo) < 0){ bad.push(e.slipNo); }
   });
   return bad;
@@ -557,16 +641,63 @@ function snapshot(){ return JSON.parse(JSON.stringify(db)); }
 
 function replaceAll(incoming){
   if(!incoming || !Array.isArray(incoming.entries)) return false;
-  db = Object.assign(emptyDb(), incoming, { rev: db.rev + 1, syncedRev: 0 });
+  // Restoring is ONE change waiting to go to Drive, not one for every
+  // entry in the file it came from, so the count starts from here.
+  var base = db.rev + 1;
+  db = Object.assign(emptyDb(), incoming, { rev: base, syncedRev: base, writeTag: null });
   if(!db.qualities.length) db.qualities = DEFAULT_QUALITIES.slice();
-  persist();
+  db.rev++;
+  // Said before the write, so any other tab open on this computer
+  // knows the copy about to arrive replaces its own rather than
+  // joining it - otherwise that tab would hand straight back the very
+  // entries the restore was meant to remove.
+  writeStore(REPLACED, uid());
+  commit(false);        // a deliberate replacement - do not fold the old copy back in
   return true;
 }
 
+/* Take the stored copy exactly as it stands. Only used when another
+   tab says it has just restored a backup. */
+function adoptStored(parsed){
+  db = Object.assign(emptyDb(), parsed);
+  if(!db.qualities.length) db.qualities = DEFAULT_QUALITIES.slice();
+  writeTag = db.writeTag || "";    // that copy is ours now; do not write over it
+  emit();
+}
+
+/* markSynced is the only truly quiet write: it records what has just
+   gone up and is not itself something to send. The password and the
+   backup date are both kept in the register and shared between
+   devices, so changing either is a change like any other - otherwise
+   it sits here and never reaches the other devices. */
 function markSynced(rev){ db.syncedRev = rev; persistQuiet(); }
 function pendingChanges(){ return Math.max(0, db.rev - db.syncedRev); }
-function markBackedUp(){ db.lastBackup = new Date().toISOString(); persistQuiet(); }
-function setLock(hash){ db.lock = hash; persistQuiet(); }
+function markBackedUp(){ db.lastBackup = new Date().toISOString(); persist(); }
+function setLock(hash){ db.lock = hash; db.lockAt = new Date().toISOString(); persist(); }
+
+/* ---------------- another tab on this device ----------------
+   localStorage tells every other tab of the site when it changes. Take
+   that work on board and redraw, so two tabs open on the same counter
+   never show different figures. */
+var adoptNext = false;
+if(global.addEventListener){
+  global.addEventListener("storage", function(ev){
+    if(ev.key === REPLACED && ev.newValue){ adoptNext = true; return; }
+    if(ev.key !== KEY || !ev.newValue) return;
+    var other;
+    try{ other = JSON.parse(ev.newValue); }catch(e){ return; }
+    if(!other || !Array.isArray(other.entries)) return;
+    if(other.writeTag && other.writeTag === writeTag) return;
+    if(adoptNext){ adoptNext = false; adoptStored(other); return; }
+    var res = foldIn(other);
+    if(res.changed){
+      db.rev = Math.max(db.rev, other.rev || 0);
+      commit(true);       // write the union back, so both tabs agree
+    }else{
+      emit();             // nothing new, but the screen may still be stale
+    }
+  });
+}
 
 /* ---------------- public ---------------- */
 global.Store = {
@@ -608,6 +739,7 @@ global.Store = {
 
   // sync bookkeeping
   mergeRemote: mergeRemote,
+  aheadOf: aheadOf,
   markSynced: markSynced,
   pendingChanges: pendingChanges,
   markBackedUp: markBackedUp,

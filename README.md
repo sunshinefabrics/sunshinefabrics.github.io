@@ -14,9 +14,6 @@ It runs entirely in the browser. There is no server to maintain.
 | `js/drive.js` | Google Drive sync |
 | `js/ui.js` | Forms, tables, printing |
 
-`Sunshine_Stock_Outward_Colour_Quantity.html` is the original first version, kept
-for reference. It is not used and can be deleted once you are satisfied.
-
 ## Hosting
 
 Upload the whole folder. Anything that serves static files works — Netlify,
@@ -45,6 +42,14 @@ Three rules the software follows:
    combines it with this one. Each entry has its own identity, so two devices
    that both worked offline end up with the union of their work — no one's
    entries disappear. This is the mistake that cost data in the earlier version.
+
+   Drive cannot be told *"write this only if nobody else has"*, so after
+   writing, the software looks again. If another device got in during that
+   moment, its entries are pulled back and the two are written together.
+
+   The same applies to two tabs or windows open on one computer: a tab folds in
+   whatever the other one saved before writing, and each tab shows the other's
+   entries straight away without a reload.
 
 3. **Nothing is ever deleted.** A wrong entry is *voided*: it stays in History
    marked as voided, and the stock is recalculated. A correction voids the old
@@ -135,23 +140,39 @@ under the heading mirrors it.
 |---|---|
 | **Connect Google Drive** | Signs in. Pulls whatever is already in Drive and merges it with this device. |
 | **Sync now** | Pushes this device's changes up straight away, without waiting. |
-| **Refresh from Drive** | Pulls the Drive copy and merges it in. Press this when someone has been entering on another device. |
+| **Refresh from Drive** | Pulls the Drive copy and merges it in at once. You should rarely need it — see below. |
 | **Disconnect** | Stops syncing. The register stays on this device. |
 
-- After connecting, it also saves by itself a few seconds after each change.
-- Google signs you out after about an hour. The bar then says **Reconnect** and
-  shows how many changes are waiting. They are safe on the device; press
-  Reconnect and they go up. A browser-only app cannot avoid this — staying
-  signed in permanently would need a server.
+- After connecting, it saves by itself a few seconds after each change, and
+  again on the way out if the phone is put away mid-entry.
+- **It keeps up with the other devices on its own.** Every minute, and whenever
+  the window is brought back to the front, it asks Drive whether anything has
+  changed and pulls it in. So the counter PC and the owner's phone show the
+  same figures without anyone pressing anything. A device with nothing to say
+  only asks the question — it does not write. Change how often in
+  `js/config.js` with `drivePollSeconds`.
+- Google's sign-in lasts about an hour. When it runs out the software asks
+  Google for a new one quietly, and usually gets it, so nothing appears on
+  screen. If Google will not — the account was signed out, or the app is still
+  in *Testing* and the seven days are up — the bar says **Reconnect** and shows
+  how many changes are waiting. They are safe on the device; press Reconnect
+  and they go up.
 - On a second device, sign in with the same Google account and press Connect.
   The two registers merge; neither one's entries are lost.
+- Opening the register on the same computer when it is already open in another
+  tab is safe. Both tabs stay in step.
 
 ### If two devices issue the same slip number
 
-Both devices hand out slip numbers from their own count, so working offline they
-can reach the same number. The software does not quietly renumber anyone's
-paperwork — after a merge it says *"Check slip no. 7 — used twice."* Correct one
-of them in History.
+Both devices hand out slip numbers from their own count, so **while they are
+offline** they can reach the same number. The software does not quietly
+renumber anyone's paperwork — after a merge it says *"Check slip no. 7 — used
+twice."* Correct one of them in History.
+
+Two tabs on one computer cannot clash this way: each one checks the shared
+count before taking a number. Restarting the slip book does not count as a
+clash either — slip 1 of the new book and slip 1 of the old are different
+slips, and the software knows which book each belongs to.
 
 ---
 
@@ -175,3 +196,6 @@ that matters before relying on this.
 - **A quality in use cannot be removed**, only renamed, so history stays correct.
 - **Printing** gives an A5 slip with customer, slip number, items and signature
   lines. It prints from the page itself, so pop-up blockers cannot stop it.
+- **On a phone** the fields are sized so the browser does not zoom the page in
+  every time one is tapped, and all six tabs fit across the screen. Add it to
+  the home screen and it opens like an app.

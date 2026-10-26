@@ -62,7 +62,7 @@ function renderSync(s){
   var dot = $("#syncDot"), txt = $("#syncText"), btn = $("#syncBtn"), pend = $("#syncPending");
 
   var cls = "dot", label = s.message || "";
-  if(s.busy)                      cls += " busy";
+  if(s.busy || s.status === "connecting") cls += " busy";
   else if(s.status === "connected") cls += " ok";
   else if(s.status === "expired")   cls += " warn";
   else if(s.status === "error")     cls += " bad";
@@ -82,7 +82,10 @@ function renderSync(s){
   // With no Client ID there is nothing to connect to yet, so the button
   // sends the user to Setup where it is explained, rather than vanishing.
   btn.hidden = false;
-  btn.disabled = !!s.busy;
+  // While it is picking the sign-in back up by itself there is nothing
+  // useful to press, so the button waits rather than inviting a second
+  // sign-in on top of the first.
+  btn.disabled = !!s.busy || s.status === "connecting";
   btn.textContent = (s.status === "off")       ? "Set up Drive"
                   : (s.status === "connected") ? "Sync now"
                   : (s.status === "expired")   ? "Reconnect"
@@ -109,8 +112,9 @@ function renderDrivePanel(s){
 
   var dot = $("#setupDot"), label = $("#setupState");
   var cls = "dot", word = "Not set up";
-  if(s.busy)                        { cls += " busy"; word = "Working"; }
-  else if(s.status === "connected") { cls += " ok";   word = "Connected"; }
+  if(s.busy)                         { cls += " busy"; word = "Working"; }
+  else if(s.status === "connecting") { cls += " busy"; word = "Reconnecting"; }
+  else if(s.status === "connected")  { cls += " ok";   word = "Connected"; }
   else if(s.status === "expired")   { cls += " warn"; word = "Reconnect needed"; }
   else if(s.status === "error")     { cls += " bad";  word = "Problem"; }
   else if(s.status === "ready")     {                 word = "Not connected"; }
@@ -126,7 +130,7 @@ function renderDrivePanel(s){
   var connectBtn = $("#driveConnect");
   connectBtn.textContent = (s.status === "expired") ? "Reconnect Google Drive" : "Connect Google Drive";
   connectBtn.hidden = connected;
-  connectBtn.disabled = !!s.busy;
+  connectBtn.disabled = !!s.busy || s.status === "connecting";
 
   $("#driveSync").hidden     = !connected;
   $("#driveRefresh").hidden  = !connected;

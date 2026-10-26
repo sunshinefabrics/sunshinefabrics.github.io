@@ -10,10 +10,19 @@
       we last saw it, it is pulled and MERGED into ours first. Nothing
       is ever overwritten blind - that is what wiped data in the old
       Firebase code.
-   3. Google access tokens are short lived and a browser-only app
-      cannot refresh them by itself, so when one runs out the status
-      turns to "Reconnect" and changes queue up until it is clicked.
-      They are never dropped.
+   3. After writing, the copy in Drive is checked again. Drive has no
+      way to say "write this only if nobody else has", so if another
+      device wrote in the moment between our read and our write, its
+      entries are now underneath ours. We pull them back and write the
+      two together.
+   4. Google access tokens last about an hour. A new one can usually be
+      had without showing anything, so a device left alone picks itself
+      up again by itself. When Google will not give one quietly the
+      status turns to "Reconnect" and changes queue up until it is
+      clicked. They are never dropped.
+   5. A device that is only being looked at makes no changes, so nothing
+      would ever prompt it to check Drive. It therefore also looks on a
+      timer, and whenever it is brought back to the front.
    ================================================================== */
 (function (global) {
 "use strict";
@@ -23,14 +32,22 @@ var FILES    = "https://www.googleapis.com/drive/v3/files";
 var UPLOAD   = "https://www.googleapis.com/upload/drive/v3/files";
 var FILE_KEY = "sunshineFabrics.driveFileId";
 var VER_KEY  = "sunshineFabrics.driveVersion";
+var SEEN_KEY = "sunshineFabrics.driveSignedIn";
+
+/* How many times to pull and write again when another device keeps
+   getting in first. Three is far more than a shop will ever need. */
+var MAX_RETRIES = 3;
 
 var cfg        = global.SUNSHINE_CONFIG || {};
 var tokenClient = null;
 var token      = null;     // { value, expiresAt }
-var everSignedIn = false;  // so we say "Connect" first time and "Reconnect" after
 var state      = { status:"off", message:"", lastSync:null, busy:false };
 var listeners  = [];
 var saveTimer  = null;
+var pollTimer  = null;
+var silentTry  = null;     // a quiet token request already in flight
+var silentFail = 0;        // when one last failed, so we do not keep asking
+var lastCheck  = 0;        // when we last looked at Drive, for debouncing
 
 function emit(){ listeners.forEach(function(f){ try{ f(status()); }catch(e){} }); }
 
@@ -54,6 +71,14 @@ function status(){
 function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
 function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
 
+/* Remembered across reloads, so we say "Connect" the first time and
+   "Reconnect" after - and so a reload knows it may ask Google quietly. */
+var everSignedIn = lsGet(SEEN_KEY) === "1";
+
+/* How often a quiet device looks to see whether another one has been
+   working. Seconds; 60 unless config.js says otherwise. */
+var POLL_MS = Math.max(15, Number(cfg.drivePollSeconds) || 60) * 1000;
+
 /* ---------------- start-up ---------------- */
 function init(){
   if(!cfg.googleClientId){
@@ -69,6 +94,19 @@ function init(){
         callback: function(){}      // replaced per request
       });
       set("ready", "Not connected.");
+      startWatching();
+
+      // This device has been connected before, so ask Google for a
+      // token without showing anything. It answers if the account is
+      // still signed in and has already allowed this app - which is
+      // what spares a phone a tap every time it is picked up.
+      if(everSignedIn){
+        set("connecting", "Reconnecting to Google Drive...");
+        silentToken().then(function(ok2){
+          if(ok2) sync(false, true);   // first job after a reload: see what the others did
+          else set("expired", "Sign-in has expired. Changes are saved here and waiting.");
+        });
+      }
     }catch(e){
       set("error", "Google sign-in could not start: " + e.message);
     }
@@ -94,6 +132,7 @@ function requestToken(interactive){
       if(res && res.access_token){
         token = { value: res.access_token, expiresAt: Date.now() + ((res.expires_in || 3600) - 60) * 1000 };
         everSignedIn = true;
+        lsSet(SEEN_KEY, "1");
         resolve(token);
       }else{
         reject(new Error((res && res.error) ? res.error : "Sign-in was cancelled."));
@@ -109,6 +148,21 @@ function requestToken(interactive){
 }
 
 function haveValidToken(){ return token && token.expiresAt > Date.now(); }
+
+/* Ask Google for a token without putting anything on screen. It only
+   works where the account is still signed in and has already allowed
+   this app, so a refusal is ordinary and is not reported as a fault.
+   After one refusal we leave it alone for a while rather than asking
+   again every minute. */
+function silentToken(){
+  if(!tokenClient || !everSignedIn) return Promise.resolve(false);
+  if(silentTry) return silentTry;
+  if(Date.now() - silentFail < 5 * 60000) return Promise.resolve(false);
+  silentTry = requestToken(false)
+    .then(function(){ silentTry = null; return true; })
+    .catch(function(){ silentTry = null; silentFail = Date.now(); return false; });
+  return silentTry;
+}
 
 /* Google's codes are no use to someone running a fabric shop. */
 function plainError(code){
@@ -139,21 +193,29 @@ function api(url, opts){
       err.needsAuth = true;
       throw err;
     }
-    if(!res.ok) return res.text().then(function(t){ throw new Error("Drive error " + res.status + ": " + t.slice(0,140)); });
+    if(!res.ok) return res.text().then(function(t){
+      var err = new Error("Drive error " + res.status + ": " + t.slice(0,140));
+      err.status = res.status;
+      throw err;
+    });
     return res;
   });
+}
+
+function fileMeta(id){
+  return api(FILES + "/" + id + "?fields=id,version,modifiedTime").then(function(r){ return r.json(); });
 }
 
 function findFile(){
   var id = lsGet(FILE_KEY);
   if(id){
-    return api(FILES + "/" + id + "?fields=id,version,modifiedTime")
-      .then(function(r){ return r.json(); })
-      .catch(function(e){
-        if(e.needsAuth) throw e;
-        lsSet(FILE_KEY, "");            // file was deleted - look again
-        return searchFile();
-      });
+    return fileMeta(id).catch(function(e){
+      // Only a file that is really gone justifies forgetting which one
+      // it was. A dropped connection must not send us hunting by name.
+      if(e.needsAuth || e.status !== 404) throw e;
+      lsSet(FILE_KEY, "");
+      return searchFile();
+    });
   }
   return searchFile();
 }
@@ -169,10 +231,13 @@ function searchFile(){
     });
 }
 
+/* A failed request must never be mistaken for an empty Drive - that
+   would have us write our copy over a perfectly good one. So only a
+   file we genuinely cannot read comes back as nothing, and then
+   writing a good one over it is the only way out. */
 function downloadFile(id){
   return api(FILES + "/" + id + "?alt=media")
-    .then(function(r){ return r.json(); })
-    .catch(function(e){ if(e.needsAuth) throw e; return null; });
+    .then(function(r){ return r.json().catch(function(){ return null; }); });
 }
 
 function createFile(data){
@@ -217,6 +282,9 @@ function disconnect(){
     try{ google.accounts.oauth2.revoke(token.value); }catch(e){}
   }
   token = null;
+  everSignedIn = false;      // stop the quiet reconnect attempts as well
+  silentTry = null;
+  lsSet(SEEN_KEY, "");
   lsSet(FILE_KEY, "");
   lsSet(VER_KEY, "");
   set("ready", "Disconnected.");
@@ -231,14 +299,18 @@ function sync(interactive, force){
   if(state.busy) return Promise.resolve(false);
 
   if(!haveValidToken()){
-    if(!interactive){
+    if(interactive){
+      return requestToken(true).then(function(){ return runSync(force); })
+        .catch(function(e){ set("expired", e.message); return false; });
+    }
+    // Try for a new token quietly before giving up and asking the user.
+    return silentToken().then(function(ok){
+      if(ok) return runSync(force);
       set(everSignedIn ? "expired" : "ready",
           everSignedIn ? "Sign-in has expired. Changes are saved here and waiting."
                        : "Not connected. Changes are saved on this device.");
-      return Promise.resolve(false);
-    }
-    return requestToken(true).then(function(){ return runSync(force); })
-      .catch(function(e){ set("expired", e.message); return false; });
+      return false;
+    });
   }
   return runSync(force);
 }
@@ -248,15 +320,62 @@ function runSync(force){
   set("syncing", "Syncing...");
   var merged = null;
   var uploadedRev = null;
+  var seeded = false;
 
   /* Read the register and its revision number together, so what we
      mark as synced is exactly what went up. Taking the revision any
      earlier - before a merge, say - leaves a change that has already
      been uploaded still showing as waiting. */
   function payload(){
-    var snap = { rev: Store.db().rev, data: Store.snapshot() };
-    uploadedRev = snap.rev;
-    return snap.data;
+    uploadedRev = Store.db().rev;
+    return Store.snapshot();
+  }
+
+  /* Nothing of ours is missing up there, so there is nothing to send.
+     Everything we hold is already in Drive. */
+  function alreadyThere(version){
+    lsSet(VER_KEY, String(version || ""));
+    uploadedRev = Store.db().rev;
+    return {};
+  }
+
+  function noteMerge(m){
+    if(!m) return;
+    if(!merged) merged = { added:0, voided:0, conflicts:[] };
+    merged.added  += m.added  || 0;
+    merged.voided += m.voided || 0;
+    (m.conflicts || []).forEach(function(c){
+      if(merged.conflicts.indexOf(c) < 0) merged.conflicts.push(c);
+    });
+  }
+
+  /* Pull the copy in Drive, combine it with ours, and send ours back
+     only if we are holding something it has not got. */
+  function mergeThenPush(file, tries){
+    return downloadFile(file.id).then(function(remote){
+      var ahead = true;
+      if(remote){
+        ahead = Store.aheadOf(remote);     // asked before the merge, while the two still differ
+        noteMerge(Store.mergeRemote(remote));
+      }
+      if(!ahead) return alreadyThere(file.version);
+      return push(file.id, tries);
+    });
+  }
+
+  /* Write, then look again. Drive cannot be told "write this only if
+     nobody else has", so if the file moved between our read and our
+     write, another device's entries are now underneath ours. Pull them
+     back and write the two together. */
+  function push(id, tries){
+    return updateFile(id, payload()).then(function(saved){
+      lsSet(VER_KEY, String(saved.version || ""));
+      if(tries <= 0) return {};
+      return fileMeta(id).then(function(now){
+        if(String(now.version || "") === String(saved.version || "")) return {};
+        return mergeThenPush(now, tries - 1);
+      });
+    });
   }
 
   return findFile()
@@ -266,35 +385,27 @@ function runSync(force){
         return createFile(payload()).then(function(created){
           lsSet(FILE_KEY, created.id);
           lsSet(VER_KEY, String(created.version || ""));
-          return { seeded:true };
+          seeded = true;
+          return {};
         });
       }
       var lastSeen = lsGet(VER_KEY);
       // Pull and merge whenever Drive has moved on since our last sync.
       if(force || String(file.version || "") !== String(lastSeen || "")){
-        return downloadFile(file.id).then(function(remote){
-          if(remote){
-            merged = Store.mergeRemote(remote);
-          }
-          // payload() is read after the merge, so it carries both sides
-          return updateFile(file.id, payload()).then(function(saved){
-            lsSet(VER_KEY, String(saved.version || ""));
-            return { merged:merged };
-          });
-        });
+        return mergeThenPush(file, MAX_RETRIES);
       }
-      return updateFile(file.id, payload()).then(function(saved){
-        lsSet(VER_KEY, String(saved.version || ""));
-        return {};
-      });
+      // Drive is where we left it. With nothing of our own waiting,
+      // this is a device simply keeping an eye out - leave the file be.
+      if(Store.pendingChanges() <= 0) return alreadyThere(file.version);
+      return push(file.id, MAX_RETRIES);
     })
-    .then(function(result){
-      Store.markSynced(uploadedRev);
+    .then(function(){
+      if(uploadedRev != null) Store.markSynced(uploadedRev);
       state.lastSync = new Date().toISOString();
       state.busy = false;
 
       var note = "All changes saved to Google Drive.";
-      if(result && result.seeded) note = "Register uploaded to Google Drive.";
+      if(seeded) note = "Register uploaded to Google Drive.";
       if(merged && (merged.added || merged.voided)){
         note = "Merged " + merged.added + " new and " + merged.voided + " voided entr" +
                ((merged.added + merged.voided) === 1 ? "y" : "ies") + " from another device.";
@@ -313,18 +424,62 @@ function runSync(force){
     });
 }
 
-/* Nudged after each change. Only pushes when already signed in, so it
-   never interrupts the user with a popup mid-entry. */
+/* Nudged after each change. Never shows Google's popup by itself, so
+   it cannot interrupt someone mid-entry. */
 function scheduleSync(){
   if(!cfg.googleClientId) return;
   if(saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(function(){
+    saveTimer = null;
     if(Store.pendingChanges() <= 0) return;
-    if(haveValidToken()) sync(false);
-    else if(everSignedIn) set("expired", "Sign-in has expired. Changes are saved here and waiting.");
-    // never signed in yet - leave the status alone rather than claiming
-    // something expired that was never connected
+    sync(false, false);
   }, 4000);
+}
+
+/* ---------------- keeping up with the other devices ----------------
+   A device that is only being looked at never makes a change, so
+   nothing would ever prompt it to check Drive. Without this the
+   counter PC and the owner's phone each sit on their own figures until
+   somebody remembers to press Refresh - and an Outward slip refused
+   for "not enough stock" might be refused against yesterday's numbers. */
+function startWatching(){
+  if(pollTimer || !cfg.googleClientId) return;
+  pollTimer = setInterval(function(){ catchUp(true); }, POLL_MS);
+
+  if(!global.addEventListener) return;
+  global.addEventListener("online", function(){ catchUp(false); });
+  global.addEventListener("focus",  function(){ catchUp(false); });
+  global.addEventListener("pagehide", flush);
+  if(global.document && global.document.addEventListener){
+    global.document.addEventListener("visibilitychange", function(){
+      if(global.document.hidden) flush();
+      else catchUp(false);
+    });
+  }
+}
+
+/* One small request that asks Drive only whether the file has moved
+   on. Nothing is written unless it has, or unless we have something
+   of our own waiting. */
+function catchUp(onTimer){
+  if(!cfg.googleClientId || state.busy) return;
+  if(onTimer && global.document && global.document.hidden) return;   // asleep in a pocket
+  if(global.navigator && global.navigator.onLine === false) return;
+  var now = Date.now();
+  if(now - lastCheck < 5000) return;        // one trigger per moment is enough
+  lastCheck = now;
+  sync(false, false);
+}
+
+/* About to be put away. Push now rather than waiting out the pause -
+   a backgrounded tab on a phone may never get another chance. The
+   entries are safe on the device either way; this only spares the
+   other devices a wait. */
+function flush(){
+  if(!cfg.googleClientId) return;
+  if(Store.pendingChanges() <= 0) return;
+  if(saveTimer){ clearTimeout(saveTimer); saveTimer = null; }
+  if(haveValidToken()) sync(false, false);
 }
 
 global.Drive = {
@@ -333,6 +488,7 @@ global.Drive = {
   disconnect: disconnect,
   sync: sync,
   scheduleSync: scheduleSync,
+  catchUp: catchUp,
   status: status,
   onState: function(f){ listeners.push(f); }
 };
