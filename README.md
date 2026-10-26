@@ -162,6 +162,39 @@ under the heading mirrors it.
 - Opening the register on the same computer when it is already open in another
   tab is safe. Both tabs stay in step.
 
+### Who can actually see the register
+
+The register lives in **one Google account's Drive**, so that account is what
+protects it. Two things follow.
+
+**Somebody else opening the web address sees nothing of yours.** The page is
+public, but the data is not in the page. If a stranger signs in with their own
+Google account they get an empty register in *their* Drive. They cannot reach
+yours, because the permission the software asks for (`drive.file`) only ever
+shows it files it created itself, in whichever account is signed in.
+
+**The danger is the opposite one: the right person signing in with the wrong
+account.** Use a personal Gmail on the shop's phone by mistake and the whole
+register would be copied into that personal Drive, and from then on that device
+would quietly keep a second, separate register. Nobody would notice for weeks.
+
+So the software is tied to the account that owns the register. `js/config.js`:
+
+```js
+allowedGoogleAccounts: ["app.sunshinefabrics@gmail.com"],
+```
+
+Sign in with anything else and it refuses before sending a single entry, says
+which account was used and which was expected, and keeps everything safely on
+the device. The Setup tab always shows which account is signed in, so a wrong
+one is visible rather than silent. Leave the list empty to allow any account.
+
+> This is a guard against mistakes, not a lock. Anyone who can read these files
+> could edit out the check — but it would gain them nothing, because the data is
+> not in the files. **The real protection is the Google account's own password
+> and two-step verification.** Put 2-step verification on that account; it is
+> the one thing that actually keeps the figures private.
+
 ### If two devices issue the same slip number
 
 Both devices hand out slip numbers from their own count, so **while they are
@@ -181,10 +214,22 @@ slips, and the software knows which book each belongs to.
 Setup → **Set / Change Password**. The password is stored as a hash, not as
 plain text, and the register is not drawn on screen until it is entered.
 
-**It is a deterrent, not security.** Anyone who can open these files and knows a
-little can still read the data. Keeping the numbers from a determined person
-needs a server login, which means a different kind of software. Decide whether
-that matters before relying on this.
+**It is a deterrent, not security.** It stops a customer leaning over the
+counter and reading the screen. It does not stop someone with the device and a
+little knowledge, because the register is sitting in that browser's own storage
+either way.
+
+The two things that genuinely protect the figures are different:
+
+1. **The Google account's password and two-step verification**, which is what
+   stands between anyone else and the copy in Drive.
+2. **Physical control of the devices**, which is what stands between anyone else
+   and the copy on each device.
+
+Neither is something this software can do for you. Keeping the numbers from a
+determined person who has one of the devices would need a server login, which
+means a different kind of software. Decide whether that matters before relying
+on this.
 
 ## Day-to-day notes
 

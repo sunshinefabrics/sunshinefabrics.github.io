@@ -65,6 +65,7 @@ function renderSync(s){
   if(s.busy || s.status === "connecting") cls += " busy";
   else if(s.status === "connected") cls += " ok";
   else if(s.status === "expired")   cls += " warn";
+  else if(s.status === "blocked")   cls += " bad";
   else if(s.status === "error")     cls += " bad";
 
   if(s.status === "off")       label = "Saved on this device. Google Drive is not set up.";
@@ -89,6 +90,7 @@ function renderSync(s){
   btn.textContent = (s.status === "off")       ? "Set up Drive"
                   : (s.status === "connected") ? "Sync now"
                   : (s.status === "expired")   ? "Reconnect"
+                  : (s.status === "blocked")   ? "Use the right account"
                   : "Connect Google Drive";
   btn.onclick = function(){
     if(s.status === "off")            showView("setup");
@@ -115,9 +117,10 @@ function renderDrivePanel(s){
   if(s.busy)                         { cls += " busy"; word = "Working"; }
   else if(s.status === "connecting") { cls += " busy"; word = "Reconnecting"; }
   else if(s.status === "connected")  { cls += " ok";   word = "Connected"; }
-  else if(s.status === "expired")   { cls += " warn"; word = "Reconnect needed"; }
-  else if(s.status === "error")     { cls += " bad";  word = "Problem"; }
-  else if(s.status === "ready")     {                 word = "Not connected"; }
+  else if(s.status === "expired")    { cls += " warn"; word = "Reconnect needed"; }
+  else if(s.status === "blocked")    { cls += " bad";  word = "Wrong account"; }
+  else if(s.status === "error")      { cls += " bad";  word = "Problem"; }
+  else if(s.status === "ready")      {                 word = "Not connected"; }
   dot.className = cls;
   label.textContent = word;
 
@@ -128,7 +131,9 @@ function renderDrivePanel(s){
   // A sync in progress means we are signed in, so Connect stays away.
   var connected = (s.status === "connected" || s.status === "syncing" || s.busy);
   var connectBtn = $("#driveConnect");
-  connectBtn.textContent = (s.status === "expired") ? "Reconnect Google Drive" : "Connect Google Drive";
+  connectBtn.textContent = (s.status === "expired") ? "Reconnect Google Drive"
+                         : (s.status === "blocked") ? "Sign in with the right account"
+                         : "Connect Google Drive";
   connectBtn.hidden = connected;
   connectBtn.disabled = !!s.busy || s.status === "connecting";
 
@@ -138,6 +143,10 @@ function renderDrivePanel(s){
   $("#driveSync").disabled = $("#driveRefresh").disabled = !!s.busy;
 
   var bits = [];
+  // Which Google account the register is in is the thing people most
+  // often get wrong, so it is shown rather than assumed.
+  if(s.account && s.account.email)      bits.push("Signed in as " + s.account.email);
+  else if(s.tiedTo && s.tiedTo.length)  bits.push("This register belongs to " + s.tiedTo.join(" or "));
   if(s.lastSync) bits.push("Last sync " + new Date(s.lastSync).toLocaleString());
   if(s.pending > 0) bits.push(s.pending + " change" + (s.pending === 1 ? "" : "s") + " waiting to go up");
   $("#driveLastLine").textContent = bits.join(" · ");

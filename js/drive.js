@@ -29,6 +29,7 @@
 
 var SCOPE    = "https://www.googleapis.com/auth/drive.file"; // only files this app creates
 var FILES    = "https://www.googleapis.com/drive/v3/files";
+var ABOUT    = "https://www.googleapis.com/drive/v3/about";  // who is signed in
 var UPLOAD   = "https://www.googleapis.com/upload/drive/v3/files";
 var FILE_KEY = "sunshineFabrics.driveFileId";
 var VER_KEY  = "sunshineFabrics.driveVersion";
@@ -48,6 +49,8 @@ var pollTimer  = null;
 var silentTry  = null;     // a quiet token request already in flight
 var silentFail = 0;        // when one last failed, so we do not keep asking
 var lastCheck  = 0;        // when we last looked at Drive, for debouncing
+var account    = null;     // who is signed in, for the token we hold
+var wrongLogin = false;    // signed in, but not an account this register belongs to
 
 function emit(){ listeners.forEach(function(f){ try{ f(status()); }catch(e){} }); }
 
@@ -64,7 +67,9 @@ function status(){
     lastSync: state.lastSync,
     busy: state.busy,
     pending: global.Store ? Store.pendingChanges() : 0,
-    configured: !!cfg.googleClientId
+    configured: !!cfg.googleClientId,
+    account: account ? { email: account.email, name: account.name } : null,
+    tiedTo: allowedAccounts()
   };
 }
 
@@ -206,6 +211,57 @@ function fileMeta(id){
   return api(FILES + "/" + id + "?fields=id,version,modifiedTime").then(function(r){ return r.json(); });
 }
 
+/* ---------------- which account is this? ----------------
+   The register lives in whichever Google account signs in. Sign in
+   with the wrong one - a personal Gmail on the shop's phone, say - and
+   this device would copy the whole register into that account's Drive
+   and then carry on in a second, separate register. Neither is obvious
+   from the screen, so when the software is tied to an account it
+   checks before it writes anything.
+
+   Reading the signed-in address needs no extra permission: drive.file
+   is enough for this call, so the consent screen does not change. */
+function allowedAccounts(){
+  var list = cfg.allowedGoogleAccounts;
+  if(!list) return [];
+  if(typeof list === "string") list = [list];
+  if(!list.length) return [];
+  return list.map(function(s){ return String(s).trim().toLowerCase(); }).filter(Boolean);
+}
+
+function ensureAccount(){
+  if(account && account.token === token.value) return Promise.resolve(account);
+  return api(ABOUT + "?fields=user(emailAddress,displayName)")
+    .then(function(r){ return r.json(); })
+    .then(function(j){
+      var u = (j && j.user) || {};
+      account = {
+        token: token.value,
+        email: String(u.emailAddress || "").toLowerCase(),
+        name:  u.displayName || ""
+      };
+      return account;
+    });
+}
+
+/* Resolves when the account may use this register. Rejects otherwise,
+   and a failure to find out at all also rejects - better to wait,
+   with everything safe on the device, than to write the shop's figures
+   into somebody else's Drive. */
+function checkAccount(){
+  var allow = allowedAccounts();
+  if(!allow.length) return ensureAccount().catch(function(){ return null; });
+  return ensureAccount().then(function(a){
+    if(a.email && allow.indexOf(a.email) >= 0) return a;
+    var err = new Error(
+      "Signed in as " + (a.email || "an unrecognised account") + ", but this register belongs to " +
+      allow.join(" or ") + ". Nothing has been sent. Press the button and choose that account instead."
+    );
+    err.wrongAccount = true;
+    throw err;
+  });
+}
+
 function findFile(){
   var id = lsGet(FILE_KEY);
   if(id){
@@ -272,6 +328,11 @@ function updateFile(id, data){
 function connect(){
   if(!cfg.googleClientId){ set("off", "Running on this device only."); return Promise.resolve(false); }
   set("connecting", "Waiting for Google...");
+  // A deliberate press is also how the user picks a different account,
+  // so forget any earlier refusal and let Google ask again.
+  wrongLogin = false;
+  account = null;
+  silentFail = 0;
   return requestToken(true)
     .then(function(){ return sync(true, true); })   // first connect always pulls what is already there
     .catch(function(e){ set("ready", e.message); return false; });
@@ -282,6 +343,8 @@ function disconnect(){
     try{ google.accounts.oauth2.revoke(token.value); }catch(e){}
   }
   token = null;
+  account = null;
+  wrongLogin = false;
   everSignedIn = false;      // stop the quiet reconnect attempts as well
   silentTry = null;
   lsSet(SEEN_KEY, "");
@@ -297,6 +360,9 @@ function disconnect(){
 function sync(interactive, force){
   if(!cfg.googleClientId) return Promise.resolve(false);
   if(state.busy) return Promise.resolve(false);
+  // The wrong account is signed in. Only a deliberate press clears
+  // that - the timer must not keep asking Google every minute.
+  if(wrongLogin && !interactive) return Promise.resolve(false);
 
   if(!haveValidToken()){
     if(interactive){
@@ -378,7 +444,10 @@ function runSync(force){
     });
   }
 
-  return findFile()
+  // Nothing goes out, and nothing is read, until we know whose Drive
+  // we are talking to.
+  return checkAccount()
+    .then(findFile)
     .then(function(file){
       if(!file){
         // nothing in Drive yet - this device seeds it
@@ -418,7 +487,14 @@ function runSync(force){
     })
     .catch(function(e){
       state.busy = false;
-      if(e.needsAuth) set("expired", "Sign-in has expired. Changes are saved here and waiting.");
+      if(e.wrongAccount){
+        // Stop here rather than asking again every minute. Connect
+        // clears this, because that is the user choosing an account.
+        wrongLogin = true;
+        token = null;
+        set("blocked", e.message);
+      }
+      else if(e.needsAuth) set("expired", "Sign-in has expired. Changes are saved here and waiting.");
       else set("error", e.message + " Changes are saved on this device.");
       return false;
     });
