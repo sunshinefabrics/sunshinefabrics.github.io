@@ -208,7 +208,7 @@ function api(url, opts){
 }
 
 function fileMeta(id){
-  return api(FILES + "/" + id + "?fields=id,version,modifiedTime").then(function(r){ return r.json(); });
+  return api(FILES + "/" + id + "?fields=id,version,modifiedTime,trashed").then(function(r){ return r.json(); });
 }
 
 /* ---------------- which account is this? ----------------
@@ -265,11 +265,24 @@ function checkAccount(){
 function findFile(){
   var id = lsGet(FILE_KEY);
   if(id){
-    return fileMeta(id).catch(function(e){
+    return fileMeta(id).then(function(f){
+      // A file in the bin is on its way out. Drive still lets us read
+      // and write it, and then deletes it for good after 30 days - so
+      // carrying on with it would mean this device writing to something
+      // about to vanish, while any other device, which cannot see the
+      // bin, quietly starts a second register. Treat it as gone now.
+      if(f && f.trashed){
+        lsSet(FILE_KEY, "");
+        lsSet(VER_KEY, "");
+        return searchFile();
+      }
+      return f;
+    }).catch(function(e){
       // Only a file that is really gone justifies forgetting which one
       // it was. A dropped connection must not send us hunting by name.
       if(e.needsAuth || e.status !== 404) throw e;
       lsSet(FILE_KEY, "");
+      lsSet(VER_KEY, "");
       return searchFile();
     });
   }

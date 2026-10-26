@@ -202,6 +202,19 @@ under the heading mirrors it.
 - Opening the register on the same computer when it is already open in another
   tab is safe. Both tabs stay in step.
 
+### If the file in Drive is deleted
+
+Nothing is lost. The register is on each device first; Drive is the second copy.
+The next time a device syncs it notices the file has gone and uploads the
+register again, and the other devices then join that new file. Deleting it is a
+safe way to start the Drive copy afresh.
+
+Two notes. **Google's "delete" means the bin**, and a file in the bin is removed
+for good only after 30 days — the software treats a binned file as gone straight
+away rather than carrying on writing to something about to vanish. And if you
+later **restore it from the bin**, you will have two files of the same name and
+the software may pick either; delete one of them.
+
 ### Who can actually see the register
 
 The register lives in **one Google account's Drive**, so that account is what
