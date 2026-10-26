@@ -410,6 +410,8 @@ function runSync(force){
     if(!merged) merged = { added:0, voided:0, conflicts:[] };
     merged.added  += m.added  || 0;
     merged.voided += m.voided || 0;
+    if(m.superseded) merged.superseded = true;
+    if(m.cleared != null) merged.cleared = (merged.cleared || 0) + m.cleared;
     (m.conflicts || []).forEach(function(c){
       if(merged.conflicts.indexOf(c) < 0) merged.conflicts.push(c);
     });
@@ -475,8 +477,17 @@ function runSync(force){
 
       var note = "All changes saved to Google Drive.";
       if(seeded) note = "Register uploaded to Google Drive.";
-      if(merged && (merged.added || merged.voided)){
-        note = "Merged " + merged.added + " new and " + merged.voided + " voided entr" +
+      if(merged && merged.cleared != null){
+        note = "Another device started the register fresh. " +
+               (merged.cleared ? merged.cleared + " older entr" +
+                 (merged.cleared === 1 ? "y was" : "ies were") + " cleared on this one."
+                               : "This device was already empty.");
+      }
+      else if(merged && merged.superseded){
+        note = "The register from this device has replaced the copy in Google Drive.";
+      }
+      else if(merged && (merged.added || merged.voided)){
+        note = "Merged " + merged.added + " new and " + merged.voided + " deleted entr" +
                ((merged.added + merged.voided) === 1 ? "y" : "ies") + " from another device.";
       }
       if(merged && merged.conflicts && merged.conflicts.length){

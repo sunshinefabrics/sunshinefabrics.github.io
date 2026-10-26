@@ -219,7 +219,6 @@ tfoot td{border-top:1px solid var(--rule-dark);border-bottom:none;font-weight:60
   body{background:#fff}
   body>*{display:none!important}
   #printArea{display:block!important}
-  @page{size:A5 portrait;margin:10mm}
 }
 .slip{font-size:11px;color:#000}
 .slip h2{text-align:center;font-size:15px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:1px}
@@ -232,3 +231,27 @@ tfoot td{border-top:1px solid var(--rule-dark);border-bottom:none;font-weight:60
 .slip .total{margin-top:10px;text-align:right;font-size:13px;font-weight:700}
 .slip .sign{display:flex;justify-content:space-between;margin-top:34px;font-size:10px;color:#333}
 .slip .sign span{border-top:1px solid #666;padding-top:4px;width:40%;text-align:center}
+
+/* ---------- thermal roll receipt ----------
+   A receipt is set in a monospace face because the figures have to
+   line up down the right edge on a printer that has one font and no
+   hairlines worth the name. Borders are dashed rules, which is what
+   thermal heads print cleanly. Widths are the paper, less the few
+   millimetres no thermal printer can reach at each edge. */
+#printArea.roll-80{width:80mm;padding:2mm 3mm;font-size:11px}
+#printArea.roll-58{width:58mm;padding:2mm;font-size:9.5px}
+.roll{font-family:"Consolas",ui-monospace,"DejaVu Sans Mono","Courier New",monospace;
+      color:#000;line-height:1.35;letter-spacing:0}
+.roll .shop{text-align:center;font-weight:700;font-size:1.25em;letter-spacing:.05em}
+.roll .kind{text-align:center;font-size:.82em;letter-spacing:.1em;text-transform:uppercase}
+.roll hr{border:0;border-top:1px dashed #000;margin:4px 0}
+.roll .row{display:flex;justify-content:space-between;gap:8px}
+.roll .item{margin:4px 0}
+.roll .item .nm{font-weight:700}
+.roll .item .qt{display:flex;justify-content:space-between;gap:8px;padding-left:9px}
+.roll .sum{display:flex;justify-content:space-between;font-weight:700;font-size:1.15em}
+.roll .mid{text-align:center}
+.roll .sml{font-size:.82em}
+.roll .gone{text-decoration:line-through}
+.roll .sg{margin-top:20px;text-align:center;font-size:.82em}
+.roll .sg i{display:block;border-top:1px solid #000;margin:0 12% 3px}

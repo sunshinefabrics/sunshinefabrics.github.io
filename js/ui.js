@@ -224,7 +224,7 @@ function renderRecentIn(){
 
   t.appendChild(el("thead", {}, [el("tr", {}, [
     el("th", { text:"Date" }), el("th", { text:"Quality" }), el("th", { text:"Colour" }),
-    el("th", { class:"r", text:"KG" }), el("th", { text:"Supplier" }), el("th", { text:"" })
+    el("th", { class:"r", text:"KG" }), el("th", { text:"Supplier" }), el("th", { text:"Actions" })
   ])]));
 
   if(!rows.length){
@@ -240,7 +240,57 @@ function renderRecentIn(){
       el("td", { text:e.colour }),
       el("td", { class:"r", text:kg(e.grams) }),
       el("td", { class:"muted", text:e.party || "—" }),
-      el("td", {}, e.voidedAt ? [el("span", { class:"chip chip-void", text:"Voided" })] : [])
+      el("td", { class:"btn-row" }, e.voidedAt
+        ? [el("span", { class:"chip chip-void", text:"Deleted" })]
+        : [el("button", { class:"btn-danger btn-sm", type:"button", text:"Delete",
+            onclick:function(){ openDeleteEntry(e.id); } })])
+    ]));
+  });
+  t.appendChild(tb);
+}
+
+/* The slips just issued, so one can be reprinted or taken back out
+   without going looking for its lines in History. A slip is the thing
+   the customer was handed, so it is deleted whole. */
+function renderRecentOut(){
+  var t = $("#recentOut"); t.textContent = "";
+  var slips = Store.recentSlips(10);
+
+  t.appendChild(el("thead", {}, [el("tr", {}, [
+    el("th", { text:"Date" }), el("th", { text:"Slip" }), el("th", { text:"Customer" }),
+    el("th", { class:"r", text:"Items" }), el("th", { class:"r", text:"KG" }),
+    el("th", { text:"Actions" })
+  ])]));
+
+  if(!slips.length){
+    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"6" },
+      [el("div", { class:"empty", text:"No slips issued yet." })])])]));
+    return;
+  }
+
+  var tb = el("tbody");
+  slips.forEach(function(sl){
+    var no = el("td", { class:"num" }, [
+      el("span", { class: sl.voided ? "strike" : "", text: sl.slipNo == null ? "—" : String(sl.slipNo) })
+    ]);
+    if(sl.forced) no.appendChild(el("span", { class:"chip chip-forced", text:"Forced", style:"margin-left:4px" }));
+
+    var act = el("td", { class:"btn-row" }, [
+      el("button", { class:"btn btn-sm", type:"button", text:"Print",
+        onclick:function(){ printSlip(sl.slipId); } })
+    ]);
+    act.appendChild(sl.voided
+      ? el("span", { class:"chip chip-void", text:"Deleted" })
+      : el("button", { class:"btn-danger btn-sm", type:"button", text:"Delete",
+          onclick:function(){ openDeleteSlip(sl.slipId); } }));
+
+    tb.appendChild(el("tr", { class: sl.voided ? "voided" : "" }, [
+      el("td", { text: sl.date ? dmy(sl.date) : "—" }),
+      no,
+      el("td", { class:"muted", text:sl.party || "—" }),
+      el("td", { class:"r", text: sl.gone && !sl.voided ? (sl.lines - sl.gone) + " of " + sl.lines : String(sl.lines) }),
+      el("td", { class:"r", text:kg(sl.grams) }),
+      act
     ]));
   });
   t.appendChild(tb);
@@ -374,7 +424,8 @@ function commitSlip(lines, date, forced){
   $("#lastSlipPanel").hidden = false;
   $("#lastSlipNo").textContent = res.slipNo;
   $("#lastSlipTotal").textContent = kg(res.grams);
-  $("#printLast").onclick = function(){ printSlip(res.slipId); };
+  $("#printLast").onclick     = function(){ printSlip(res.slipId, "a5"); };
+  $("#printLastRoll").onclick = function(){ printSlip(res.slipId, paper() === "58" ? "58" : "80"); };
 
   toast("Slip " + res.slipNo + " saved — " + kg(res.grams) + " KG");
 }
@@ -389,11 +440,12 @@ function renderStock(){
 
   t.appendChild(el("thead", {}, [el("tr", {}, [
     el("th", { text:"Quality" }), el("th", { text:"Colour" }),
-    el("th", { class:"r", text:"Received" }), el("th", { class:"r", text:"Issued" }), el("th", { class:"r", text:"Balance" })
+    el("th", { class:"r", text:"Received" }), el("th", { class:"r", text:"Issued" }),
+    el("th", { class:"r", text:"Balance" }), el("th", { text:"Actions" })
   ])]));
 
   if(!rows.length){
-    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"5" }, [
+    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"6" }, [
       el("div", { class:"empty", text: term ? "Nothing matches that search." : "No stock recorded yet." })])])]));
     return;
   }
@@ -405,7 +457,11 @@ function renderStock(){
       el("td", { text:r.colour }),
       el("td", { class:"r", text:kg(r.in) }),
       el("td", { class:"r", text:kg(r.out) }),
-      el("td", { class:"r " + (r.bal < 0 ? "neg" : ""), text:kg(r.bal) })
+      el("td", { class:"r " + (r.bal < 0 ? "neg" : ""), text:kg(r.bal) }),
+      el("td", { class:"btn-row" }, [
+        el("button", { class:"btn-danger btn-sm", type:"button", text:"Delete",
+          onclick:function(){ openDeleteStockLine(r); } })
+      ])
     ]));
   });
   t.appendChild(tb);
@@ -418,7 +474,8 @@ function renderStock(){
     el("td", { colspan:"2", text:"Total — " + rows.length + " item" + (rows.length === 1 ? "" : "s") }),
     el("td", { class:"r", text:kg(tot.in) }),
     el("td", { class:"r", text:kg(tot.out) }),
-    el("td", { class:"r " + (tot.bal < 0 ? "neg" : ""), text:kg(tot.bal) })
+    el("td", { class:"r " + (tot.bal < 0 ? "neg" : ""), text:kg(tot.bal) }),
+    el("td")
   ])]));
 }
 
@@ -640,16 +697,16 @@ function renderHistory(){
                                    text: e.type === "IN" ? "In" : "Out" }));
     if(e.forced)     chips.appendChild(el("span", { class:"chip chip-forced", text:"Forced", style:"margin-left:4px" }));
     if(e.correctsId) chips.appendChild(el("span", { class:"chip chip-corr",   text:"Correction", style:"margin-left:4px" }));
-    if(e.voidedAt)   chips.appendChild(el("span", { class:"chip chip-void",   text:"Voided", style:"margin-left:4px" }));
+    if(e.voidedAt)   chips.appendChild(el("span", { class:"chip chip-void",   text:"Deleted", style:"margin-left:4px" }));
 
     var actions = el("td", { class:"btn-row" });
     if(!e.voidedAt){
       actions.appendChild(el("button", { class:"btn btn-sm", type:"button", text:"Correct",
         onclick:function(){ openCorrect(e.id); } }));
-      actions.appendChild(el("button", { class:"btn-danger btn-sm", type:"button", text:"Void",
-        onclick:function(){ openVoid(e.id); } }));
+      actions.appendChild(el("button", { class:"btn-danger btn-sm", type:"button", text:"Delete",
+        onclick:function(){ openDeleteEntry(e.id); } }));
     }else{
-      actions.appendChild(el("span", { class:"muted", text:e.voidReason || "voided" }));
+      actions.appendChild(el("span", { class:"muted", text:e.voidReason || "deleted" }));
     }
     if(e.slipId){
       actions.appendChild(el("button", { class:"btn btn-sm", type:"button", text:"Print",
@@ -688,28 +745,75 @@ function openModal(nodes){
 }
 function closeModal(){ $("#modal").hidden = true; }
 
-function openVoid(id){
-  var e = Store.db().entries.find(function(x){ return x.id === id; });
-  if(!e) return;
+/* ================= delete =================
+   Delete means one thing everywhere in this software, whichever screen
+   it is pressed on: the entries stop counting at once, and they stay in
+   History marked as deleted. Nothing is erased. That is the whole
+   reason the Stock screen, History and the exported CSV can never end
+   up telling three different stories, and it is what lets a wrong press
+   be found afterwards instead of being discovered as a hole in the
+   figures weeks later. */
+function deleteModal(o){
   var reason = el("input", { placeholder:"Reason (optional)", autocomplete:"off" });
   openModal([
-    el("div", { class:"panel-head" }, [el("h2", { text:"Void entry" })]),
+    el("div", { class:"panel-head" }, [el("h2", { text:o.title })]),
     el("div", { class:"panel-body" }, [
-      el("p", { style:"margin-top:0", text:
-        (e.type === "IN" ? "Inward " : "Outward ") + kg(e.grams) + " KG — " +
-        e.quality + " " + e.colour + " dated " + dmy(e.date) + "." }),
-      el("p", { class:"hint", text:"The entry stays in History marked as voided and stock is recalculated. Nothing is erased." }),
+      el("p", { style:"margin-top:0", text:o.what }),
+      o.warn ? el("p", { class:"hint hint-warn", text:o.warn }) : null,
+      el("p", { class:"hint", text:"It stops counting in the stock figures straight away, and stays in History marked as deleted so it can be traced. Nothing is erased." }),
       el("label", { text:"Reason" }), reason,
       el("div", { class:"btn-row", style:"margin-top:14px" }, [
-        el("button", { class:"btn-danger", type:"button", text:"Void entry", onclick:function(){
-          Store.voidEntry(id, reason.value);
-          closeModal(); toast("Entry voided");
+        el("button", { class:"btn-danger", type:"button", text:o.button, onclick:function(){
+          var n = o.run(reason.value.trim());
+          closeModal();
+          toast(o.done(n));
         }}),
         el("button", { class:"btn", type:"button", text:"Cancel", onclick:closeModal })
       ])
     ])
   ]);
   reason.focus();
+}
+
+function openDeleteEntry(id){
+  var e = Store.db().entries.find(function(x){ return x.id === id; });
+  if(!e || e.voidedAt) return;
+  deleteModal({
+    title: "Delete entry",
+    what: (e.type === "IN" ? "Inward " : "Outward ") + kg(e.grams) + " KG — " +
+          e.quality + " " + e.colour + " dated " + dmy(e.date) + ".",
+    warn: e.slipId ? "This is one item off slip " + e.slipNo + ". The rest of the slip stays." : null,
+    button: "Delete entry",
+    run: function(r){ Store.voidEntry(id, r); return 1; },
+    done: function(){ return "Entry deleted"; }
+  });
+}
+
+function openDeleteSlip(slipId){
+  var sl = Store.recentSlips().filter(function(x){ return x.slipId === slipId; })[0];
+  if(!sl || sl.voided) return;
+  var open = sl.lines - sl.gone;
+  deleteModal({
+    title: "Delete slip " + (sl.slipNo == null ? "" : sl.slipNo),
+    what: open + " item" + (open === 1 ? "" : "s") + ", " + kg(sl.grams) + " KG, issued to " +
+          (sl.party || "no customer named") + " on " + dmy(sl.date) + ".",
+    warn: open > 1 ? "The whole slip goes — all " + open + " items of it. To take out one item only, use Delete beside that line in History." : null,
+    button: "Delete whole slip",
+    run: function(r){ return Store.voidSlip(slipId, r || "Slip deleted"); },
+    done: function(n){ return "Slip deleted — " + n + " item" + (n === 1 ? "" : "s"); }
+  });
+}
+
+function openDeleteStockLine(r){
+  deleteModal({
+    title: "Delete " + r.quality + " " + r.colour,
+    what: (r.n === 1 ? "One entry makes up this line — " : r.n + " entries make up this line — ") +
+          kg(r.in) + " KG received, " + kg(r.out) + " KG issued, " + kg(r.bal) + " KG in hand.",
+    warn: "Every one of them goes, the inward as well as the outward, not just the balance. Slips carrying this colour will show those lines as deleted.",
+    button: r.n === 1 ? "Delete the entry" : "Delete all " + r.n + " entries",
+    run: function(x){ return Store.voidStockLine(r.quality, r.colour, x || "Stock line deleted"); },
+    done: function(n){ return r.quality + " " + r.colour + " deleted — " + n + " entr" + (n === 1 ? "y" : "ies") + " gone"; }
+  });
 }
 
 function openCorrect(id){
@@ -725,7 +829,7 @@ function openCorrect(id){
     el("div", { class:"panel-head" }, [el("h2", { text:"Correct entry" })]),
     el("div", { class:"panel-body" }, [
       el("p", { class:"hint", style:"margin-top:0",
-        text:"The original is voided and a corrected entry is added in its place. Both stay in History." }),
+        text:"The original is deleted and a corrected entry is added in its place. Both stay in History." }),
       el("div", { class:"grid" }, [
         el("div", {}, [el("label", { text:"Date" }), dIn]),
         el("div", {}, [el("label", { text:"Quality" }), qSel]),
@@ -837,11 +941,65 @@ function doSlipReset(){
   toast("Slip numbering restarts at " + start);
 }
 
+function renderFreshPanel(){
+  var n = Store.db().entries.length;
+  $("#freshCount").textContent = n + " entr" + (n === 1 ? "y" : "ies") + " now";
+}
+
+/* The wipe asks twice: once here with the figures in front of the
+   user, and once by making them type the words. In between it takes
+   the backup, because afterwards there is nothing to take one from. */
+function doStartFresh(){
+  var db = Store.db(), n = db.entries.length;
+  var keepQ  = $("#freshKeepQ").checked;
+  var keepPw = $("#freshKeepPw").checked;
+  var typed = el("input", { placeholder:"START FRESH", autocomplete:"off", autocapitalize:"characters" });
+  var go = el("button", { class:"btn-danger", type:"button", text:"Download backup and clear", disabled:"disabled" });
+
+  typed.addEventListener("input", function(){
+    var ready = norm(typed.value) === "START FRESH";
+    if(ready) go.removeAttribute("disabled"); else go.setAttribute("disabled", "disabled");
+  });
+
+  go.addEventListener("click", function(){
+    if(norm(typed.value) !== "START FRESH") return;
+    backup();                                   // the only way back
+    var had = Store.startFresh({ keepQualities:keepQ, keepLock:keepPw });
+    closeModal();
+    toast(had ? had + " entr" + (had === 1 ? "y" : "ies") + " cleared — the register starts from 1"
+              : "The register was already empty");
+  });
+
+  var drive = Drive.status();
+  openModal([
+    el("div", { class:"panel-head" }, [el("h2", { text:"Clear the whole register" })]),
+    el("div", { class:"panel-body" }, [
+      el("p", { style:"margin-top:0", text:
+        n + " entr" + (n === 1 ? "y" : "ies") + " will be removed, including the ones already marked " +
+        "deleted. Slip numbering goes back to 1." }),
+      el("p", { class:"hint", text:
+        (keepQ ? "The quality list stays. " : "The quality list goes back to the standard one. ") +
+        (keepPw ? "The password stays." : "The password is removed.") }),
+      drive.configured ? el("p", { class:"hint hint-warn", text:
+        "Google Drive: the empty register goes up at the next sync and replaces what is there — " +
+        "it will not be merged back in. Any other phone or computer using this register must be " +
+        "cleared the same way, or run its sync once, which clears it to match." }) : null,
+      el("p", { class:"hint", text:"A backup file downloads first. Keep it somewhere safe; it is the only way back." }),
+      el("label", { text:"Type START FRESH to confirm" }), typed,
+      el("div", { class:"btn-row", style:"margin-top:14px" }, [
+        go, el("button", { class:"btn", type:"button", text:"Cancel", onclick:closeModal })
+      ])
+    ])
+  ]);
+  typed.focus();
+}
+
 function renderBackupInfo(){
-  var d = Store.db();
+  var d = Store.db(), n = d.entries.length;
+  var held = n + " entr" + (n === 1 ? "y" : "ies") + " stored.";
   $("#backupInfo").textContent = d.lastBackup
-    ? "Last backup: " + new Date(d.lastBackup).toLocaleString() + " — " + d.entries.length + " entries stored."
-    : "No backup taken yet — " + d.entries.length + " entries stored.";
+    ? "Last backup: " + new Date(d.lastBackup).toLocaleString() + " — " + held
+    : "No backup taken yet — " + held;
 }
 
 /* ================= export / backup ================= */
@@ -865,7 +1023,7 @@ function exportCsv(){
   var head = ["Date","Type","Status","Slip No.","Quality","Colour","Quantity KG","Party","Remarks"];
   var body = rows.map(function(e){
     return [e.date, e.type === "IN" ? "Inward" : "Outward",
-            e.voidedAt ? "VOIDED" : (e.forced ? "FORCED" : "Active"),
+            e.voidedAt ? "DELETED" : (e.forced ? "FORCED" : "Active"),
             e.slipNo == null ? "" : e.slipNo,
             e.quality, e.colour, kg(e.grams), e.party, e.remarks].map(csvCell).join(",");
   });
@@ -899,32 +1057,101 @@ function restore(file){
   fr.readAsText(file);
 }
 
-/* ================= print ================= */
-function printSlip(slipId){
-  var rows = Store.db().entries.filter(function(e){ return e.slipId === slipId; });
-  if(!rows.length){ alert("Slip not found."); return; }
-  var first = rows[0];
-  var totalG = rows.reduce(function(s, e){ return s + (e.voidedAt ? 0 : e.grams); }, 0);
+/* ================= print =================
+   A slip is described once and drawn twice: on an A5 sheet for the
+   file, and on a thermal roll for the customer's hand. Two renderers,
+   one set of figures, so neither drawing can drift from the other or
+   from the register. */
 
+var PAPER_KEY = "sunshineFabrics.paper";
+
+/* Which printer a device has is a fact about that device, not about
+   the business, so this setting stays here and is never sent to Drive.
+   The counter prints receipts on its roll while the owner's phone
+   prints sheets, and neither changes the other. */
+function paper(){
+  var v = null;
+  try{ v = localStorage.getItem(PAPER_KEY); }catch(e){}
+  return (v === "80" || v === "58") ? v : "a5";
+}
+
+function setPaper(v){
+  try{ localStorage.setItem(PAPER_KEY, v); }catch(e){}
+  renderPaperPanel();
+  toast(v === "a5" ? "Printing on A5 sheets" : "Printing on a " + v + " mm roll");
+}
+
+var PAPERS = [
+  { id:"a5", label:"A5 sheet", note:
+    "The full slip on an A5 sheet: customer, items in a ruled table, and signature lines at the foot. This is the copy for the file." },
+  { id:"80", label:"Thermal 80 mm", note:
+    "The usual counter-receipt roll. The page is cut to the length of the receipt, so no blank paper is fed through after it." },
+  { id:"58", label:"Thermal 58 mm", note:
+    "The narrow roll, as on a hand-held billing machine. Long quality names wrap onto a second line to fit." }
+];
+
+function renderPaperPanel(){
+  var now = paper(), box = $("#paperPick");
+  box.textContent = "";
+  PAPERS.forEach(function(p){
+    box.appendChild(el("button", {
+      class: p.id === now ? "btn-primary" : "btn",
+      type: "button", text: p.label, "aria-pressed": String(p.id === now),
+      onclick: function(){ setPaper(p.id); }
+    }));
+  });
+  $("#paperNote").textContent = PAPERS.filter(function(p){ return p.id === now; })[0].note;
+  $("#printSample").textContent = now === "a5" ? "Print a test page" : "Print a test receipt";
+}
+
+function printedStamp(){
+  var d = new Date();
+  return "Printed " + dmy(todayISO()) + " " +
+         String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+}
+
+function shopName(){
+  return (global.SUNSHINE_CONFIG && SUNSHINE_CONFIG.businessName) || "SUNSHINE FABRICS";
+}
+
+/* ---------- one slip, two drawings ---------- */
+function slipData(slipId){
+  var rows = Store.db().entries.filter(function(e){ return e.slipId === slipId; });
+  if(!rows.length) return null;
+  var first = rows[0];
+  return {
+    kind: "Outward Stock Slip",
+    ref: "Slip No. " + (first.slipNo == null ? "—" : first.slipNo),
+    date: dmy(first.date),
+    party: first.party || "—",
+    forced: rows.some(function(e){ return e.forced; }),
+    items: rows.map(function(e){
+      return { quality:e.quality, colour:e.colour, qty:kg(e.grams),
+               remarks:e.remarks || "", gone:!!e.voidedAt };
+    }),
+    total: kg(rows.reduce(function(s, e){ return s + (e.voidedAt ? 0 : e.grams); }, 0))
+  };
+}
+
+function slipA5(d){
   var tb = el("tbody");
-  rows.forEach(function(e, i){
+  d.items.forEach(function(it, i){
     tb.appendChild(el("tr", {}, [
       el("td", { text:String(i+1) }),
-      el("td", { text:e.quality + (e.voidedAt ? " (VOIDED)" : "") }),
-      el("td", { text:e.colour }),
-      el("td", { class:"r", text:kg(e.grams) }),
-      el("td", { text:e.remarks || "—" })
+      el("td", { text: it.quality + (it.gone ? " (DELETED)" : "") }),
+      el("td", { text:it.colour }),
+      el("td", { class:"r", text: it.gone ? "DELETED" : it.qty }),
+      el("td", { text:it.remarks || "—" })
     ]));
   });
 
-  doPrint(el("div", { class:"slip" }, [
-    el("h2", { text: (SUNSHINE_CONFIG.businessName || "SUNSHINE FABRICS") }),
-    el("div", { class:"sub", text:"Outward Stock Slip" }),
+  return el("div", { class:"slip" }, [
+    el("h2", { text:shopName() }),
+    el("div", { class:"sub", text:d.kind }),
     el("div", { class:"meta" }, [
-      el("span", { text:"Slip No.: " + (first.slipNo == null ? "—" : first.slipNo) }),
-      el("span", { text:"Date: " + dmy(first.date) })
+      el("span", { text:d.ref }), el("span", { text:"Date: " + d.date })
     ]),
-    el("div", { class:"meta" }, [el("span", { text:"Customer: " + (first.party || "—") })]),
+    el("div", { class:"meta" }, [el("span", { text:"Customer: " + d.party })]),
     el("table", {}, [
       el("thead", {}, [el("tr", {}, [
         el("th", { text:"No." }), el("th", { text:"Quality" }), el("th", { text:"Colour" }),
@@ -932,45 +1159,149 @@ function printSlip(slipId){
       ])]),
       tb
     ]),
-    el("div", { class:"total", text:"Final Total: " + kg(totalG) + " KG" }),
-    first.forced ? el("div", { class:"hint", text:"Issued against short stock (forced)." }) : null,
+    el("div", { class:"total", text:"Final Total: " + d.total + " KG" }),
+    d.forced ? el("div", { class:"hint", text:"Issued against short stock (forced)." }) : null,
+    d.note   ? el("div", { class:"hint", text:d.note }) : null,
     el("div", { class:"sign" }, [
       el("span", { text:"Prepared by" }), el("span", { text:"Received by" })
     ])
-  ]));
+  ]);
+}
+
+function slipRoll(d){
+  var body = el("div");
+  d.items.forEach(function(it){
+    body.appendChild(el("div", { class:"item" }, [
+      el("div", { class:"nm" + (it.gone ? " gone" : ""), text:it.quality }),
+      el("div", { class:"qt" }, [
+        el("span", { class: it.gone ? "gone" : "", text:it.colour }),
+        el("span", { text: it.gone ? "DELETED" : it.qty + " KG" })
+      ]),
+      it.remarks ? el("div", { class:"sml", style:"padding-left:9px", text:it.remarks }) : null
+    ]));
+  });
+  var open = d.items.filter(function(it){ return !it.gone; }).length;
+
+  return el("div", { class:"roll" }, [
+    el("div", { class:"shop", text:shopName() }),
+    el("div", { class:"kind", text:d.kind }),
+    el("hr"),
+    el("div", { class:"row" }, [el("span", { text:d.ref }), el("span", { text:d.date })]),
+    el("div", { text:"To: " + d.party }),
+    el("hr"),
+    body,
+    el("hr"),
+    el("div", { class:"sum" }, [el("span", { text:"TOTAL" }), el("span", { text:d.total + " KG" })]),
+    el("div", { class:"mid sml", text: open + " item" + (open === 1 ? "" : "s") }),
+    d.forced ? el("div", { class:"mid sml", text:"ISSUED AGAINST SHORT STOCK" }) : null,
+    d.note   ? el("div", { class:"mid sml", text:d.note }) : null,
+    el("hr"),
+    el("div", { class:"sg" }, [el("i"), "Received by"]),
+    el("div", { class:"mid sml", style:"margin-top:7px", text:printedStamp() })
+  ]);
+}
+
+/* size is left out everywhere except the two buttons on a just-saved
+   slip, where the user is choosing the paper then and there */
+function printSlip(slipId, size){
+  var d = slipData(slipId);
+  if(!d){ alert("Slip not found."); return; }
+  size = size || paper();
+  doPrint(size === "a5" ? slipA5(d) : slipRoll(d), size);
 }
 
 function printStock(){
-  var rows = Store.stockRows();
-  var tb = el("tbody");
-  rows.forEach(function(r){
-    tb.appendChild(el("tr", {}, [
-      el("td", { text:r.quality }), el("td", { text:r.colour }),
-      el("td", { class:"r", text:kg(r.in) }), el("td", { class:"r", text:kg(r.out) }),
-      el("td", { class:"r", text:kg(r.bal) })
-    ]));
-  });
+  var rows = Store.stockRows(), size = paper();
   var tot = rows.reduce(function(s, r){ return s + r.bal; }, 0);
 
-  doPrint(el("div", { class:"slip" }, [
-    el("h2", { text:(SUNSHINE_CONFIG.businessName || "SUNSHINE FABRICS") }),
-    el("div", { class:"sub", text:"Current Stock as on " + dmy(todayISO()) }),
-    el("table", {}, [
-      el("thead", {}, [el("tr", {}, [
-        el("th", { text:"Quality" }), el("th", { text:"Colour" }),
-        el("th", { class:"r", text:"Received" }), el("th", { class:"r", text:"Issued" }), el("th", { class:"r", text:"Balance" })
-      ])]),
-      tb
-    ]),
-    el("div", { class:"total", text:"Total Balance: " + kg(tot) + " KG" })
-  ]));
+  if(size === "a5"){
+    var tb = el("tbody");
+    rows.forEach(function(r){
+      tb.appendChild(el("tr", {}, [
+        el("td", { text:r.quality }), el("td", { text:r.colour }),
+        el("td", { class:"r", text:kg(r.in) }), el("td", { class:"r", text:kg(r.out) }),
+        el("td", { class:"r", text:kg(r.bal) })
+      ]));
+    });
+    doPrint(el("div", { class:"slip" }, [
+      el("h2", { text:shopName() }),
+      el("div", { class:"sub", text:"Current Stock as on " + dmy(todayISO()) }),
+      el("table", {}, [
+        el("thead", {}, [el("tr", {}, [
+          el("th", { text:"Quality" }), el("th", { text:"Colour" }),
+          el("th", { class:"r", text:"Received" }), el("th", { class:"r", text:"Issued" }),
+          el("th", { class:"r", text:"Balance" })
+        ])]),
+        tb
+      ]),
+      el("div", { class:"total", text:"Total Balance: " + kg(tot) + " KG" })
+    ]), "a5");
+    return;
+  }
+
+  /* A roll is too narrow to carry received and issued as well, and what
+     is wanted on the floor is a count sheet: what should be on the shelf. */
+  var body = el("div");
+  rows.forEach(function(r){
+    body.appendChild(el("div", { class:"item" }, [
+      el("div", { class:"nm", text:r.quality }),
+      el("div", { class:"qt" }, [el("span", { text:r.colour }), el("span", { text:kg(r.bal) + " KG" })])
+    ]));
+  });
+
+  doPrint(el("div", { class:"roll" }, [
+    el("div", { class:"shop", text:shopName() }),
+    el("div", { class:"kind", text:"Stock in Hand" }),
+    el("div", { class:"mid sml", text:dmy(todayISO()) }),
+    el("hr"),
+    rows.length ? body : el("div", { class:"mid sml", text:"Nothing in stock." }),
+    el("hr"),
+    el("div", { class:"sum" }, [el("span", { text:"TOTAL" }), el("span", { text:kg(tot) + " KG" })]),
+    el("div", { class:"mid sml", text: rows.length + " line" + (rows.length === 1 ? "" : "s") }),
+    el("div", { class:"mid sml", style:"margin-top:7px", text:printedStamp() })
+  ]), size);
+}
+
+/* Lining a printer up should not cost a real slip number. */
+function printSample(){
+  var size = paper();
+  doPrint((size === "a5" ? slipA5 : slipRoll)({
+    kind: "Test Print",
+    ref: "Slip No. 000",
+    date: dmy(todayISO()),
+    party: "TEST CUSTOMER",
+    forced: false,
+    note: "Test print. Nothing was saved to the register.",
+    items: [
+      { quality:"COTTON 60s", colour:"BLACK",    qty:"125.50", remarks:"",          gone:false },
+      { quality:"RAYON SLUB", colour:"SKY BLUE", qty:"40.00",  remarks:"two rolls", gone:false }
+    ],
+    total: "165.50"
+  }), size);
 }
 
 /* Printing happens inside this page, so a blocked pop-up cannot stop it. */
-function doPrint(node){
+function doPrint(node, size){
+  if(size !== "80" && size !== "58") size = "a5";
   var area = $("#printArea");
   area.textContent = "";
+  area.className = size === "a5" ? "" : "roll-" + size;
   area.appendChild(node);
+
+  if(size === "a5"){
+    $("#pageRule").textContent = "@page{size:A5 portrait;margin:10mm}";
+  }else{
+    /* A roll has no page length of its own. Measure what was just built
+       and make the page exactly that tall, or the printer feeds a whole
+       sheet's worth of blank paper out after every receipt. Measuring
+       needs the thing laid out, so it goes off-screen for the moment it
+       takes rather than being shown. */
+    area.style.cssText = "display:block;position:fixed;top:0;left:-9999px;visibility:hidden";
+    var mm = area.scrollHeight * 25.4 / 96;
+    area.style.cssText = "";
+    $("#pageRule").textContent =
+      "@page{size:" + size + "mm " + (Math.ceil(mm) + 4) + "mm;margin:0}";
+  }
   window.print();
 }
 
@@ -1044,7 +1375,7 @@ function showView(name){
   if(name === "stock")   renderStock();
   if(name === "reports") renderReports();
   if(name === "history") renderHistory();
-  if(name === "setup"){ renderQualities(); renderSlipPanel(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
+  if(name === "setup"){ renderQualities(); renderSlipPanel(); renderPaperPanel(); renderBackupInfo(); renderFreshPanel(); renderPwState(); renderDrivePanel(); }
   if(name === "outward" && !$("#outLines .line")) addLine();
 }
 
@@ -1056,10 +1387,11 @@ function refreshAll(){
   $$("#outLines .lineQ").forEach(function(s){ fillQualitySelect(s, true); });
   $("#outSlipNo").textContent = Store.db().nextSlip;
   renderRecentIn();
+  renderRecentOut();
   if(!$("#view-stock").hidden)   renderStock();
   if(!$("#view-reports").hidden) renderReports();
   if(!$("#view-history").hidden) renderHistory();
-  if(!$("#view-setup").hidden){ renderQualities(); renderSlipPanel(); renderBackupInfo(); renderPwState(); renderDrivePanel(); }
+  if(!$("#view-setup").hidden){ renderQualities(); renderSlipPanel(); renderPaperPanel(); renderBackupInfo(); renderFreshPanel(); renderPwState(); renderDrivePanel(); }
 }
 
 function openApp(){
@@ -1142,12 +1474,16 @@ function init(){
   $("#slipReset").addEventListener("click", doSlipReset);
   $("#slipStart").addEventListener("input", renderSlipPanel);
 
+  $("#printSample").addEventListener("click", printSample);
+
   $("#backupBtn").addEventListener("click", backup);
   $("#restoreBtn").addEventListener("click", function(){ $("#restoreFile").click(); });
   $("#restoreFile").addEventListener("change", function(e){
     if(e.target.files[0]) restore(e.target.files[0]);
     e.target.value = "";
   });
+  $("#freshBtn").addEventListener("click", doStartFresh);
+
   $("#setPw").addEventListener("click", setPassword);
   $("#clearPw").addEventListener("click", function(){
     if(!Store.db().lock){ alert("No password is set."); return; }
@@ -1191,6 +1527,12 @@ else init();
 /* exposed for the browser console and for tests */
 global.UI = { showView:showView, refreshAll:refreshAll, printSlip:printSlip,
               historyRows:historyRows, csvCell:csvCell, renderDrivePanel:renderDrivePanel,
-              renderReports:renderReports, setPeriod:setPeriod, printReport:printReport };
+              renderReports:renderReports, setPeriod:setPeriod, printReport:printReport,
+              printStock:printStock, printSample:printSample, slipData:slipData,
+              slipA5:slipA5, slipRoll:slipRoll, doPrint:doPrint,
+              paper:paper, setPaper:setPaper,
+              renderRecentOut:renderRecentOut, renderStock:renderStock,
+              openDeleteEntry:openDeleteEntry, openDeleteSlip:openDeleteSlip,
+              openDeleteStockLine:openDeleteStockLine, doStartFresh:doStartFresh };
 
 })(window);

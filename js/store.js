@@ -103,6 +103,15 @@ function emptyDb(){
     // two events in the same millisecond cannot be told apart by time.
     slipEpoch: 0,
     slipResetAt: null,   // kept only to show when it last happened
+    // Within one generation entries are only ever added or marked
+    // deleted, which is what lets two devices be merged safely. But a
+    // restored backup, or a register started fresh, deliberately draws
+    // a line: everything from before it is finished with, including
+    // the copy in Drive and whatever the other devices still hold.
+    // Each such replacement raises this number, and the higher number
+    // wins whole rather than being merged. It is the one way a
+    // register can genuinely start over.
+    generation: 0,
     lock: null,
     lockAt: null,    // when the password was last set or removed
     lastBackup: null,
@@ -232,7 +241,8 @@ function stockRows(){
   var m = new Map();
   live().forEach(function(e){
     var k = e.quality + "\u0000" + e.colour, r = m.get(k);
-    if(!r){ r = { quality:e.quality, colour:e.colour, in:0, out:0 }; m.set(k,r); }
+    if(!r){ r = { quality:e.quality, colour:e.colour, in:0, out:0, n:0 }; m.set(k,r); }
+    r.n++;
     if(e.type === "IN") r.in += e.grams; else r.out += e.grams;
   });
   return Array.from(m.values()).map(function(r){
@@ -421,6 +431,57 @@ function voidEntry(id, reason){
   return e;
 }
 
+/* Deleting from the Inward, Outward or Stock screens is this same void.
+   The entry stops counting the moment it is pressed, and it stays in
+   History marked as deleted - which is why Stock, History and the CSV
+   can never drift apart, and why a wrong press can be traced back.
+   A slip or a stock line goes in one go, so it counts as one change to
+   sync rather than a burst of them. */
+function voidMany(list, reason){
+  var now = new Date().toISOString(), n = 0;
+  list.forEach(function(e){
+    if(e.voidedAt) return;
+    e.voidedAt = now; e.updatedAt = now; e.voidReason = (reason||"").trim();
+    n++;
+  });
+  if(n) persist();
+  return n;
+}
+
+function voidSlip(slipId, reason){
+  if(!slipId) return 0;
+  return voidMany(db.entries.filter(function(e){ return e.slipId === slipId; }), reason);
+}
+
+function voidStockLine(quality, colour, reason){
+  var c = norm(colour);
+  return voidMany(db.entries.filter(function(e){
+    return e.quality === quality && e.colour === c;
+  }), reason);
+}
+
+/* Outward put back together into the slips it was issued on, newest
+   first. Entries are only ever appended, so their order is the order
+   the slips were written. */
+function recentSlips(limit){
+  var m = new Map();
+  db.entries.forEach(function(e){
+    if(e.type !== "OUT" || !e.slipId) return;
+    var s = m.get(e.slipId);
+    if(!s){
+      s = { slipId:e.slipId, slipNo:e.slipNo, date:e.date, party:e.party,
+            forced:false, lines:0, gone:0, grams:0 };
+      m.set(e.slipId, s);
+    }
+    s.lines++;
+    if(e.voidedAt) s.gone++; else s.grams += e.grams;
+    if(e.forced) s.forced = true;
+  });
+  var all = Array.from(m.values()).reverse();
+  all.forEach(function(s){ s.voided = s.gone === s.lines; });
+  return limit ? all.slice(0, limit) : all;
+}
+
 function correctEntry(id, fields){
   var e = db.entries.find(function(x){ return x.id === id; });
   if(!e || e.voidedAt) return null;
@@ -491,6 +552,24 @@ function mergeRemote(remote){
    in Drive and for the copy another tab on this device left behind. */
 function foldIn(remote){
   if(!remote || !Array.isArray(remote.entries)) return { added:0, voided:0, conflicts:[], changed:false };
+
+  var myGen = db.generation || 0, theirGen = remote.generation || 0;
+
+  if(theirGen < myGen){
+    // This copy is from before a replacement made here. Folding it in
+    // would hand back the very entries that replacement took out, so
+    // it is passed over and ours goes up in its place.
+    return { added:0, voided:0, conflicts:[], changed:false, superseded:true };
+  }
+  if(theirGen > myGen){
+    // The other side drew the line, and after we last had a say. Ours
+    // is the copy from before it, so theirs is taken whole.
+    var cleared = db.entries.length;
+    var keepRev = db.rev, keepSynced = db.syncedRev;
+    db = Object.assign(emptyDb(), JSON.parse(JSON.stringify(remote)));
+    db.rev = keepRev; db.syncedRev = keepSynced; db.writeTag = null;
+    return { added:0, voided:0, conflicts:[], changed:true, cleared:cleared };
+  }
 
   var wasQualities = db.qualities.join("\u0000"),
       wasSlip      = db.nextSlip,
@@ -571,6 +650,11 @@ function foldIn(remote){
    the file alone instead of writing over somebody else's work. */
 function aheadOf(remote){
   if(!remote || !Array.isArray(remote.entries)) return true;
+  // A register started fresh holds fewer entries than the one in
+  // Drive, not more, so every test below would say there is nothing
+  // to send. The line we drew is the thing that has to go up.
+  if((db.generation || 0) > (remote.generation || 0)) return true;
+  if((db.generation || 0) < (remote.generation || 0)) return false;
   var theirs = new Map();
   remote.entries.forEach(function(e){ theirs.set(e.id, e); });
   var ahead = db.entries.some(function(mine){
@@ -644,7 +728,10 @@ function replaceAll(incoming){
   // Restoring is ONE change waiting to go to Drive, not one for every
   // entry in the file it came from, so the count starts from here.
   var base = db.rev + 1;
-  db = Object.assign(emptyDb(), incoming, { rev: base, syncedRev: base, writeTag: null });
+  // Higher than anything this device has seen, so the copy in Drive
+  // and the other devices give way to it rather than merging with it.
+  var gen = Math.max(db.generation || 0, incoming.generation || 0) + 1;
+  db = Object.assign(emptyDb(), incoming, { rev: base, syncedRev: base, writeTag: null, generation: gen });
   if(!db.qualities.length) db.qualities = DEFAULT_QUALITIES.slice();
   db.rev++;
   // Said before the write, so any other tab open on this computer
@@ -654,6 +741,24 @@ function replaceAll(incoming){
   writeStore(REPLACED, uid());
   commit(false);        // a deliberate replacement - do not fold the old copy back in
   return true;
+}
+
+/* Clearing the register out and beginning again: practice entries
+   before the real thing starts, or a new financial year on a clean
+   book. This is the only place in the software that truly removes
+   entries instead of marking them deleted, which is why it goes
+   through the same replacement path as restoring a backup, and why
+   the screen above it insists on a backup first. */
+function startFresh(opts){
+  opts = opts || {};
+  var had = db.entries.length;
+  var fresh = emptyDb();
+  fresh.businessName = db.businessName;
+  fresh.qualities = (opts.keepQualities === false) ? DEFAULT_QUALITIES.slice() : db.qualities.slice();
+  if(opts.keepLock !== false){ fresh.lock = db.lock; fresh.lockAt = db.lockAt; }
+  fresh.generation = db.generation || 0;    // replaceAll raises it
+  replaceAll(fresh);
+  return had;
 }
 
 /* Take the stored copy exactly as it stands. Only used when another
@@ -707,10 +812,12 @@ global.Store = {
   db: function(){ return db; },
   snapshot: snapshot,
   replaceAll: replaceAll,
+  startFresh: startFresh,
 
   // reads
   live: live,
   stockRows: stockRows,
+  recentSlips: recentSlips,
   availableGrams: availableGrams,
   totals: totals,
   knownColours: knownColours,
@@ -730,6 +837,8 @@ global.Store = {
   addInward: addInward,
   addSlip: addSlip,
   voidEntry: voidEntry,
+  voidSlip: voidSlip,
+  voidStockLine: voidStockLine,
   correctEntry: correctEntry,
   addQuality: addQuality,
   renameQuality: renameQuality,

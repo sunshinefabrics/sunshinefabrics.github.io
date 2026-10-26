@@ -8,6 +8,7 @@
 <title>Sunshine Fabrics — Stock Register</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='2' fill='%231d3f5e'/><path d='M3 4.5h10M3 8h10M3 11.5h6' stroke='white' stroke-width='1.4' stroke-linecap='round'/></svg>">
 <link rel="stylesheet" href="css/app.css">
+<style id="pageRule">@page{size:A5 portrait;margin:10mm}</style>
 </head>
 
 <body>
@@ -125,10 +126,16 @@
           <strong>Slip <span id="lastSlipNo"></span> saved.</strong>
           <span class="num" id="lastSlipTotal"></span> KG.
           <div class="btn-row" style="margin-top:9px">
-            <button class="btn" type="button" id="printLast">Print A5 Slip</button>
+            <button class="btn" type="button" id="printLast">Print Slip (A5)</button>
+            <button class="btn" type="button" id="printLastRoll">Print Receipt</button>
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Recent Slips</h2><span class="eyebrow spacer">Last 10</span></div>
+      <div class="tablewrap"><table id="recentOut"></table></div>
     </div>
   </section>
 
@@ -144,7 +151,11 @@
       </div>
       <div class="tablewrap"><table id="stockTable"></table></div>
     </div>
-    <p class="hint">Stock is worked out from the register. Nothing here can be deleted directly &mdash; correct or void an entry in <strong>History</strong> and this updates by itself.</p>
+    <p class="hint">Stock is worked out from the register, so it follows whatever is entered.
+       <strong>Delete</strong> takes a whole quality and colour out of the figures &mdash; every entry behind
+       that line stops counting, but all of them stay in <strong>History</strong>, so a wrong press can be
+       found and the figures always add up. To change one entry rather than the whole line, use
+       <strong>Correct</strong> in History.</p>
   </section>
 
   <!-- ---------------- REPORTS ---------------- -->
@@ -200,7 +211,7 @@
         </div>
         <div class="btn-row" style="margin-top:12px">
           <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500">
-            <input type="checkbox" id="hVoid" style="width:auto"> Show voided entries
+            <input type="checkbox" id="hVoid" style="width:auto"> Show deleted entries
           </label>
           <span class="spacer"></span>
           <button class="btn btn-sm" type="button" id="exportCsv">Export CSV</button>
@@ -294,6 +305,30 @@
     </div>
 
     <div class="panel">
+      <div class="panel-head">
+        <h2>Printing</h2>
+        <span class="eyebrow spacer">This device only</span>
+      </div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">
+          Which paper the <strong>Print</strong> buttons use on this computer or phone. The counter
+          can print small receipts while the office prints full sheets &mdash; this choice is not
+          shared with the other devices.
+        </p>
+        <div class="btn-row" id="paperPick"></div>
+        <p class="hint" id="paperNote"></p>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn" type="button" id="printSample">Print a test page</button>
+        </div>
+        <p class="hint">
+          On a thermal printer, turn off <strong>Headers and footers</strong> in the browser's print
+          box and set <strong>Margins</strong> to None, or the roll comes out with a web address
+          printed across it. Set the printer's own paper width to match the choice above.
+        </p>
+      </div>
+    </div>
+
+    <div class="panel">
       <div class="panel-head"><h2>Backup</h2></div>
       <div class="panel-body">
         <p class="hint" style="margin-top:0">A downloaded backup is the copy that does not depend on this browser or on Google. Take one regularly.</p>
@@ -303,6 +338,36 @@
           <input type="file" id="restoreFile" accept="application/json,.json" hidden>
         </div>
         <p class="hint" id="backupInfo"></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Start Fresh</h2>
+        <span class="eyebrow spacer" id="freshCount">&mdash;</span>
+      </div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">
+          Clears every entry and begins the register from nothing, with slip numbers back at 1.
+          It is here for wiping out practice entries before the real register starts, or for
+          opening a clean book at a new financial year.
+        </p>
+        <div class="notice notice-warn" style="margin:0 0 12px">
+          <strong>This is the one thing in this software that truly removes entries</strong>
+          rather than marking them deleted. A backup is downloaded first, and that file is the
+          only way back.
+        </div>
+        <div class="btn-row">
+          <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500">
+            <input type="checkbox" id="freshKeepQ" style="width:auto" checked> Keep the quality list
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;margin:0;font-weight:500">
+            <input type="checkbox" id="freshKeepPw" style="width:auto" checked> Keep the password
+          </label>
+        </div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn-danger" type="button" id="freshBtn">Clear the register</button>
+        </div>
       </div>
     </div>
 

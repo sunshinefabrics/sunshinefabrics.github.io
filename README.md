@@ -51,10 +51,50 @@ Three rules the software follows:
    whatever the other one saved before writing, and each tab shows the other's
    entries straight away without a reload.
 
-3. **Nothing is ever deleted.** A wrong entry is *voided*: it stays in History
-   marked as voided, and the stock is recalculated. A correction voids the old
-   entry and writes a new one beside it. The Stock screen, the History screen
-   and the CSV always add up to the same figures.
+3. **Delete does not erase.** There is a **Delete** button on the Inward list,
+   on every slip in the Outward list, on every line of Stock and on every row of
+   History. They all do the same thing: the entry stops counting in the figures
+   the moment it is pressed, and it stays in History marked as deleted. A
+   correction deletes the old entry and writes the new one beside it.
+
+   That is why the Stock screen, the History screen and the CSV always add up to
+   the same number, and why a wrong press can be found afterwards instead of
+   turning up weeks later as an unexplained hole in the stock.
+
+   **Delete on a slip takes the whole slip.** **Delete on a line of Stock takes
+   every entry behind that line** — the inward as well as the outward, not just
+   the balance. Each one says how much it is about to take before it takes it,
+   and asks for a reason. To take out one item of a slip rather than all of it,
+   use Delete beside that line in History.
+
+   To see what has been deleted, tick **Show deleted entries** in History.
+
+   The one exception is **Setup → Start Fresh**, which is the subject of its
+   own section below.
+
+### Starting the register over
+
+**Setup → Start Fresh** empties the register completely and puts slip numbers
+back at 1. It is for clearing out practice entries before the real register
+begins, or for opening a clean book at a new financial year.
+
+This is the only place in the software that truly removes entries instead of
+marking them deleted, so it asks for the words START FRESH to be typed and
+**downloads a backup before it does anything**. That file is the only way back.
+Tick boxes decide whether the quality list and the password survive it.
+
+**Deleting the file in Google Drive does not clear anything.** The register
+lives on each device as well, and the first device to sync would simply put it
+all back — a new file would appear with the old figures in it. The clearing has
+to be done in the software, which is what Start Fresh is for.
+
+Once it is done, that device's empty register goes up at the next sync and
+**replaces** what is in Drive rather than merging with it. Every other phone or
+computer on the same register then clears itself to match the next time it
+syncs, and says so. The same protection now covers **Restore from Backup**: a
+restored register is not quietly re-filled by the copy sitting in Drive.
+
+Do it while nobody else is entering, and take the backup seriously.
 
 ### Still take backups
 
@@ -231,6 +271,43 @@ determined person who has one of the devices would need a server login, which
 means a different kind of software. Decide whether that matters before relying
 on this.
 
+## Printing
+
+Setup → **Printing** chooses what the **Print** buttons on this computer or
+phone put on paper:
+
+| Choice | What comes out |
+|---|---|
+| **A5 sheet** | The full slip: customer, slip number, items in a ruled table, signature lines. The copy for the file. |
+| **Thermal 80 mm** | The usual counter-receipt roll. |
+| **Thermal 58 mm** | The narrow roll, as on a hand-held billing machine. |
+
+**This choice stays on the device it was made on.** It is not kept in the
+register and never goes to Drive, so the counter can print receipts on its roll
+while the owner's phone prints A5 sheets, and neither changes the other.
+
+On a roll the page is **cut to the length of the receipt** — the software
+measures what it has just drawn and tells the printer exactly how long the page
+is, so no blank paper is fed through after each one.
+
+Two things to set once on a thermal printer, both in the browser's print box:
+turn **Headers and footers** off, and set **Margins** to None. Otherwise the
+roll comes out with the web address and the date printed across it. Set the
+printer's own paper width in Windows to match the choice above. **Print a test
+receipt** in the same panel prints made-up figures so this can be lined up
+without issuing a real slip number.
+
+The **Print Receipt** button beside a slip you have just saved always prints a
+roll receipt, whatever the setting says, and **Print Slip (A5)** beside it
+always prints the sheet. Everywhere else — History, Stock, the recent slips —
+one Print button follows the setting.
+
+A printed slip always adds up. If a line of it was deleted afterwards, the
+reprint prints the word DELETED where the weight would have been, rather than a
+figure the total leaves out.
+
+Printing happens inside the page itself, so a pop-up blocker cannot stop it.
+
 ## Day-to-day notes
 
 - **Outward refuses to issue more than you have.** If the goods really are there
@@ -239,8 +316,7 @@ on this.
 - **Colours are matched loosely.** `black`, `BLACK ` and `BLACK` are one colour.
   Typing `BLAK` offers *"Did you mean BLACK?"*.
 - **A quality in use cannot be removed**, only renamed, so history stays correct.
-- **Printing** gives an A5 slip with customer, slip number, items and signature
-  lines. It prints from the page itself, so pop-up blockers cannot stop it.
+- **Printing** is covered in its own section above.
 - **On a phone** the fields are sized so the browser does not zoom the page in
   every time one is tapped, and all six tabs fit across the screen. Add it to
   the home screen and it opens like an app.
