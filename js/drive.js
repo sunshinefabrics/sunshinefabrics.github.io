@@ -51,6 +51,7 @@ var silentFail = 0;        // when one last failed, so we do not keep asking
 var lastCheck  = 0;        // when we last looked at Drive, for debouncing
 var account    = null;     // who is signed in, for the token we hold
 var wrongLogin = false;    // signed in, but not an account this register belongs to
+var duplicateFiles = 0;    // how many files of this name Drive last reported
 
 function emit(){ listeners.forEach(function(f){ try{ f(status()); }catch(e){} }); }
 
@@ -294,7 +295,17 @@ function searchFile(){
   return api(FILES + "?q=" + q + "&spaces=drive&fields=files(id,version,modifiedTime)")
     .then(function(r){ return r.json(); })
     .then(function(j){
-      var f = (j.files || [])[0];
+      var files = (j.files || []).slice();
+      // A file restored from the bin leaves two of this name. Take the
+      // one changed most recently rather than whichever Drive happened
+      // to list first, and remember that there was a choice to make.
+      duplicateFiles = files.length;
+      if(files.length > 1){
+        files.sort(function(a,b){
+          return String(b.modifiedTime||"").localeCompare(String(a.modifiedTime||""));
+        });
+      }
+      var f = files[0];
       if(f) lsSet(FILE_KEY, f.id);
       return f || null;
     });
@@ -400,6 +411,7 @@ function runSync(force){
   var merged = null;
   var uploadedRev = null;
   var seeded = false;
+  var blockedSeed = false;
 
   /* Read the register and its revision number together, so what we
      mark as synced is exactly what went up. Taking the revision any
@@ -465,6 +477,12 @@ function runSync(force){
     .then(findFile)
     .then(function(file){
       if(!file){
+        // Nothing in Drive. An empty register is not something to seed
+        // it with: a cleared browser and a withdrawn permission both
+        // look exactly like this from here, and writing a file now is
+        // how a shop ends up with two registers drifting apart. Wait
+        // until there is something worth sending.
+        if(!Store.db().entries.length){ blockedSeed = true; return {}; }
         // nothing in Drive yet - this device seeds it
         return createFile(payload()).then(function(created){
           lsSet(FILE_KEY, created.id);
@@ -484,6 +502,14 @@ function runSync(force){
       return push(file.id, MAX_RETRIES);
     })
     .then(function(){
+      if(blockedSeed){
+        state.busy = false;
+        set("ready",
+          "No register found in Google Drive, and this device has nothing to send yet. If the " +
+          "register should already be there, check the signed-in account below before making any " +
+          "entry - do not start typing into an empty register.");
+        return false;
+      }
       if(uploadedRev != null) Store.markSynced(uploadedRev);
       state.lastSync = new Date().toISOString();
       state.busy = false;
@@ -505,6 +531,12 @@ function runSync(force){
       }
       if(merged && merged.conflicts && merged.conflicts.length){
         note += " Check slip no. " + merged.conflicts.join(", ") + " - used twice.";
+      }
+      // Two files of one name means two registers, and only one of them
+      // is being written to. Say so rather than choosing quietly.
+      if(duplicateFiles > 1){
+        note += " Warning: " + duplicateFiles + " files of this name in Drive - the one changed " +
+                "most recently is in use. Delete the spare in Google Drive.";
       }
       set("connected", note);
       return true;

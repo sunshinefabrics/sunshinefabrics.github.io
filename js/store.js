@@ -69,14 +69,44 @@ function readStore(k){
   catch(e){ storageOK = false; storageMsg = "This browser is blocking storage."; return null; }
 }
 function writeStore(k,v){
-  try { localStorage.setItem(k,v); return true; }
+  try {
+    localStorage.setItem(k,v);
+    // A write that works clears an earlier complaint, so what the
+    // screen says follows the true state instead of staying up forever.
+    storageOK = true;
+    storageMsg = "";
+    return true;
+  }
   catch(e){
     storageOK = false;
     storageMsg = (e && e.name === "QuotaExceededError")
-      ? "Storage is full. Download a backup, then remove old entries."
+      ? "Storage is full. Download a backup now, then merge old entries in Setup."
       : "This browser is blocking storage, so nothing can be saved. Check private mode or site-data settings.";
     return false;
   }
+}
+
+/* How much of this browser's allowance the register is using. The
+   allowance itself cannot be read, so the figure below is the 5 MB a
+   site is normally given - enough to say "getting full" in good time
+   rather than only once a save has already failed. */
+var STORAGE_CAP = 5 * 1024 * 1024;
+
+function storageUsage(){
+  var used = 0;
+  try{ var raw = localStorage.getItem(KEY); used = raw ? raw.length : 0; }catch(e){}
+  var n = db.entries.length;
+  var per = n ? Math.max(1, used / n) : 400;
+  return {
+    bytes: used,
+    cap: STORAGE_CAP,
+    percent: Math.min(100, Math.round(used / STORAGE_CAP * 1000) / 10),
+    entries: n,
+    perEntry: Math.round(per),
+    room: Math.max(0, Math.floor((STORAGE_CAP - used) / per)),
+    tight: used / STORAGE_CAP >= 0.75,
+    ok: storageOK && lastWriteOK
+  };
 }
 
 function deviceId(){
@@ -126,10 +156,14 @@ function emit(){ listeners.forEach(function(f){ try{ f(); }catch(e){} }); }
    so a tab can tell its own writing apart from another tab's. */
 var writeTag = "";
 
+/* Whether the last write to this device actually landed. A full disk
+   is the one way an entry can be on screen but not on the device. */
+var lastWriteOK = true;
+
 /* Writes to this device first, always. Drive comes after. */
 function persist(){
   db.rev++;
-  commit(true);
+  return commit(true);
 }
 /* for bookkeeping writes that are not register changes (e.g. sync marks) */
 function persistQuiet(){ commit(true); }
@@ -147,8 +181,12 @@ function commit(foldOthersIn){
   if(foldOthersIn) absorbOtherTabs();
   writeTag = uid();
   db.writeTag = writeTag;
-  writeStore(KEY, JSON.stringify(db));
+  // The result matters. A full disk leaves this entry in memory, and
+  // in Drive if it is connected, but not on the device - so it is
+  // reported rather than passed over, and the screen says so at once.
+  lastWriteOK = writeStore(KEY, JSON.stringify(db));
   emit();
+  return lastWriteOK;
 }
 
 function absorbOtherTabs(){
@@ -319,6 +357,10 @@ function periodSummary(from, to){
 
     var before   = from ? (d < from) : false;
     var inPeriod = (!from || d >= from) && (!to || d <= to);
+    // A merged opening line is stock carried forward, not goods
+    // received. It counts as opening and never as movement, so a
+    // report covering the date it was drawn still adds up.
+    if(e.opening && inPeriod) before = true;
     if(!before && !inPeriod) return;
 
     var key = e.quality + "\u0000" + e.colour;
@@ -384,6 +426,7 @@ function newEntry(fields){
     party:"", remarks:"", slipNo:null, slipId:null,
     createdAt: now, updatedAt: now,
     voidedAt:null, voidReason:"", correctsId:null, forced:false, note:"",
+    opening:false,
     slipEpoch: db.slipEpoch || 0,
     device: deviceId()
   }, fields);
@@ -743,6 +786,108 @@ function replaceAll(incoming){
   return true;
 }
 
+/* ---------------- merging old entries ----------------
+   A register that has grown large can be folded: every entry up to a
+   chosen date is replaced by one opening line per quality and colour,
+   carrying exactly the balance those entries left behind. The stock
+   figures do not move. The detail does go, which is why the screen
+   above it takes a backup first and makes the date deliberate.
+
+   It goes out through replaceAll, the same path as a restored backup,
+   so the other devices give way to it instead of handing back the very
+   entries it has just folded. Without that, merging here and merging
+   on the phone would each put the other's detail back.               */
+function planCompact(cutoffISO){
+  var cutoff = String(cutoffISO || "").slice(0,10);
+  if(!cutoff) return null;
+
+  var folded = [], kept = [];
+  db.entries.forEach(function(e){
+    // An entry with no date cannot be placed on either side of the
+    // line, so it stays where it is rather than being guessed at.
+    if(e.date && e.date <= cutoff) folded.push(e); else kept.push(e);
+  });
+
+  var bal = new Map();
+  folded.forEach(function(e){
+    if(e.voidedAt) return;      // never counted, so it carries nothing forward
+    var k = e.quality + "\u0000" + e.colour;
+    bal.set(k, (bal.get(k) || 0) + (e.type === "IN" ? e.grams : -e.grams));
+  });
+
+  var lines = [], net = 0;
+  bal.forEach(function(grams, k){
+    if(!grams) return;          // nothing left on hand, so nothing to carry
+    var parts = k.split("\u0000");
+    lines.push({ quality:parts[0], colour:parts[1], grams:grams });
+    net += grams;
+  });
+  lines.sort(function(a,b){
+    return a.quality.localeCompare(b.quality) || a.colour.localeCompare(b.colour);
+  });
+
+  // Merging to the same date twice over would fold the opening lines
+  // this very function drew last time into an identical set - raising
+  // the generation and handing every other device a replacement, for
+  // no change at all. A backdated entry arriving later is a different
+  // matter, and does make the merge worth doing again.
+  var redundant = folded.length > 0 && folded.every(function(e){
+    return e.opening && e.date === cutoff;
+  });
+
+  return { cutoff:cutoff, folded:folded.length, opened:lines.length,
+           keptCount:kept.length, netGrams:net, lines:lines, kept:kept,
+           redundant:redundant };
+}
+
+/* What a merge would do, without doing any of it. */
+function compactPreview(cutoffISO){
+  var p = planCompact(cutoffISO);
+  if(!p) return null;
+  return { cutoff:p.cutoff, folded:p.folded, opened:p.opened,
+           keptCount:p.keptCount, netGrams:p.netGrams, lines:p.lines,
+           redundant:p.redundant };
+}
+
+function compact(cutoffISO){
+  var p = planCompact(cutoffISO);
+  if(!p || !p.folded || p.redundant) return null;
+
+  var now = new Date().toISOString();
+  var opening = p.lines.map(function(l){
+    return {
+      id: uid(),
+      // Held as a positive weight either way, so History, the printed
+      // sheet and the CSV read it like any other line.
+      type: l.grams > 0 ? "IN" : "OUT",
+      date: p.cutoff,
+      quality: l.quality, colour: l.colour,
+      grams: Math.abs(l.grams),
+      party: "", remarks: "Opening balance",
+      slipNo: null, slipId: null,
+      createdAt: now, updatedAt: now,
+      voidedAt: null, voidReason: "", correctsId: null, forced: false,
+      note: "Merged from " + p.folded + " entries up to " + p.cutoff,
+      opening: true,
+      slipEpoch: db.slipEpoch || 0,
+      device: deviceId()
+    };
+  });
+
+  var next = snapshot();
+  next.entries = opening.concat(p.kept);
+  // The old paperwork is no longer here to be counted, so the slip
+  // book is told where it had got to rather than working it out from
+  // entries that have gone.
+  next.nextSlip    = db.nextSlip;
+  next.slipEpoch   = db.slipEpoch || 0;
+  next.compactedAt = now;
+  next.compactedTo = p.cutoff;
+  replaceAll(next);
+  return { folded:p.folded, opened:opening.length,
+           entries:db.entries.length, cutoff:p.cutoff };
+}
+
 /* Clearing the register out and beginning again: practice entries
    before the real thing starts, or a new financial year on a clean
    book. This is the only place in the software that truly removes
@@ -813,6 +958,8 @@ global.Store = {
   snapshot: snapshot,
   replaceAll: replaceAll,
   startFresh: startFresh,
+  compact: compact,
+  compactPreview: compactPreview,
 
   // reads
   live: live,
@@ -856,8 +1003,9 @@ global.Store = {
   deviceId: deviceId,
 
   // storage health
-  storageOK: function(){ return storageOK; },
+  storageOK: function(){ return storageOK && lastWriteOK; },
   storageMessage: function(){ return storageMsg; },
+  storageUsage: storageUsage,
 
   // helpers shared with the UI
   uid: uid, kg: kg, toGrams: toGrams, norm: norm, todayISO: todayISO, dmy: dmy

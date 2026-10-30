@@ -674,9 +674,18 @@ function historyRows(){
   }).slice().reverse();
 }
 
+/* A register with thousands of entries would otherwise build a table
+   row for every one of them, on every keystroke in the search box.
+   The figures under the table are still worked out over everything
+   that matches - only the drawing is limited. */
+var HIST_PAGE = 300;
+var histShowAll = false;
+
 function renderHistory(){
   var t = $("#histTable"); t.textContent = "";
-  var rows = historyRows();
+  var all = historyRows();
+  var capped = !histShowAll && all.length > HIST_PAGE;
+  var rows = capped ? all.slice(0, HIST_PAGE) : all;
 
   t.appendChild(el("thead", {}, [el("tr", {}, [
     el("th", { text:"Date" }), el("th", { text:"Type" }), el("th", { text:"Slip" }),
@@ -698,6 +707,7 @@ function renderHistory(){
     if(e.forced)     chips.appendChild(el("span", { class:"chip chip-forced", text:"Forced", style:"margin-left:4px" }));
     if(e.correctsId) chips.appendChild(el("span", { class:"chip chip-corr",   text:"Correction", style:"margin-left:4px" }));
     if(e.voidedAt)   chips.appendChild(el("span", { class:"chip chip-void",   text:"Deleted", style:"margin-left:4px" }));
+    if(e.opening)    chips.appendChild(el("span", { class:"chip chip-corr",   text:"Opening", style:"margin-left:4px" }));
 
     var actions = el("td", { class:"btn-row" });
     if(!e.voidedAt){
@@ -726,12 +736,20 @@ function renderHistory(){
   });
   t.appendChild(tb);
 
-  var net = rows.reduce(function(s, e){
+  var net = all.reduce(function(s, e){
     return s + (e.voidedAt ? 0 : (e.type === "IN" ? e.grams : -e.grams));
   }, 0);
 
+  var label = capped
+    ? "Latest " + rows.length + " of " + all.length + " shown — net movement over all " + all.length
+    : all.length + " entr" + (all.length === 1 ? "y" : "ies") + " shown — net movement";
+
   t.appendChild(el("tfoot", {}, [el("tr", {}, [
-    el("td", { colspan:"5", text: rows.length + " entr" + (rows.length === 1 ? "y" : "ies") + " shown — net movement" }),
+    el("td", { colspan:"5" }, capped ? [
+      el("span", { text: label + "  " }),
+      el("button", { class:"btn btn-sm", type:"button", text:"Show all " + all.length,
+        onclick:function(){ histShowAll = true; renderHistory(); } })
+    ] : [el("span", { text: label })]),
     el("td", { class:"r " + (net < 0 ? "neg" : ""), text:kg(net) }),
     el("td", { colspan:"2" })
   ])]));
@@ -986,6 +1004,149 @@ function doStartFresh(){
         "cleared the same way, or run its sync once, which clears it to match." }) : null,
       el("p", { class:"hint", text:"A backup file downloads first. Keep it somewhere safe; it is the only way back." }),
       el("label", { text:"Type START FRESH to confirm" }), typed,
+      el("div", { class:"btn-row", style:"margin-top:14px" }, [
+        go, el("button", { class:"btn", type:"button", text:"Cancel", onclick:closeModal })
+      ])
+    ])
+  ]);
+  typed.focus();
+}
+
+/* The entry count alone says nothing about how much room is left.
+   This puts the real figure in front of the user and warns while
+   there is still time to act, rather than after a save has failed. */
+function renderStorageInfo(){
+  var box = $("#storageInfo");
+  if(!box) return;
+  var u = Store.storageUsage();
+  var txt = (u.bytes/1024).toFixed(0) + " KB of about " + Math.round(u.cap/1024/1024) +
+            " MB used (" + u.percent + "%) — room for roughly " + u.room.toLocaleString() +
+            " more entries.";
+  if(u.tight) txt += " Getting full: take a backup, then merge old entries below.";
+  box.textContent = txt;
+  box.className = u.tight ? "hint hint-warn" : "hint";
+}
+
+/* Storage can fill up mid-entry, so this is checked on every redraw
+   rather than once at start-up - otherwise the one moment it matters
+   is the one moment nothing is said. */
+function renderStorageWarning(){
+  var w = $("#storageWarn");
+  if(!w) return;
+  if(Store.storageOK()){ w.hidden = true; return; }
+  var synced = !!(window.Drive && Drive.status().configured);
+  w.textContent = Store.storageMessage() + (synced
+    ? " Anything entered now reaches Google Drive but is NOT saved on this device. Take a backup before closing the browser."
+    : " Anything entered now is NOT saved on this device. Take a backup now.");
+  w.hidden = false;
+}
+
+function renderCompactPanel(){
+  var n = Store.db().entries.length;
+  $("#compactCount").textContent = n + " entr" + (n === 1 ? "y" : "ies") + " now";
+  // A date in the future would fold entries nobody has made yet.
+  $("#compactTo").max = Store.todayISO();
+  renderCompactPreview();
+}
+
+function renderCompactPreview(){
+  var box = $("#compactPreview"), to = $("#compactTo").value, d = Store.db();
+  var done = d.compactedTo ? " Last merged up to " + dmy(d.compactedTo) + "." : "";
+  if(!to){
+    box.textContent = "Choose a date to see what would be folded." + done;
+    box.className = "hint";
+    return;
+  }
+  var p = Store.compactPreview(to);
+  if(!p || !p.folded){
+    box.textContent = "Nothing is dated on or before " + dmy(to) + "." + done;
+    box.className = "hint";
+    return;
+  }
+  if(p.redundant){
+    box.textContent = "Everything up to " + dmy(to) + " is already merged." + done;
+    box.className = "hint";
+    return;
+  }
+  box.textContent =
+    p.folded + " entr" + (p.folded === 1 ? "y" : "ies") + " up to " + dmy(to) + " would become " +
+    p.opened + " opening line" + (p.opened === 1 ? "" : "s") + " carrying " + kg(p.netGrams) + " KG. " +
+    p.keptCount + " later entr" + (p.keptCount === 1 ? "y" : "ies") + " stay as they are. " +
+    "The stock figures do not change." + done;
+  box.className = "hint hint-warn";
+}
+
+/* Merging asks twice, like Start Fresh: once with the figures in
+   front of the user, and once by making them type the word. The
+   backup is taken in between, because afterwards that file is the
+   only place the removed detail exists. */
+function doCompact(){
+  var to = $("#compactTo").value;
+  if(!to){ toast("Choose a date first"); return; }
+  var p = Store.compactPreview(to);
+  if(!p || !p.folded){ toast("Nothing to merge up to that date"); return; }
+  if(p.redundant){ toast("Everything up to that date is already merged"); return; }
+
+  var drive = Drive.status();
+  // Merging replaces what is in Drive rather than joining it, so
+  // anything this device has not sent yet must go up first. Work
+  // sitting unsent on ANOTHER device cannot be rescued from here -
+  // which is why the warning below says to do this when nobody else
+  // is entering.
+  if(drive.configured && drive.pending > 0){
+    openModal([
+      el("div", { class:"panel-head" }, [el("h2", { text:"Sync first" })]),
+      el("div", { class:"panel-body" }, [
+        el("p", { style:"margin-top:0", text:
+          drive.pending + " change" + (drive.pending === 1 ? "" : "s") + " on this device have not " +
+          "reached Google Drive yet. Merging replaces the copy in Drive instead of joining it, so " +
+          "send these up first." }),
+        el("div", { class:"btn-row", style:"margin-top:14px" }, [
+          el("button", { class:"btn-primary", type:"button", text:"Sync now",
+            onclick:function(){ closeModal(); Drive.sync(true, false); } }),
+          el("button", { class:"btn", type:"button", text:"Cancel", onclick:closeModal })
+        ])
+      ])
+    ]);
+    return;
+  }
+
+  var typed = el("input", { placeholder:"MERGE", autocomplete:"off", autocapitalize:"characters" });
+  var go = el("button", { class:"btn-danger", type:"button", text:"Download backup and merge", disabled:"disabled" });
+
+  typed.addEventListener("input", function(){
+    if(norm(typed.value) === "MERGE") go.removeAttribute("disabled");
+    else go.setAttribute("disabled", "disabled");
+  });
+
+  go.addEventListener("click", function(){
+    if(norm(typed.value) !== "MERGE") return;
+    backup();                      // the detail goes into this file and nowhere else
+    var res = Store.compact(to);
+    closeModal();
+    toast(res ? res.folded + " entries merged into " + res.opened + " opening line" +
+                (res.opened === 1 ? "" : "s")
+              : "Nothing was merged");
+  });
+
+  openModal([
+    el("div", { class:"panel-head" }, [el("h2", { text:"Merge entries up to " + dmy(to) })]),
+    el("div", { class:"panel-body" }, [
+      el("p", { style:"margin-top:0", text:
+        p.folded + " entr" + (p.folded === 1 ? "y" : "ies") + " dated on or before " + dmy(to) +
+        " will be removed and replaced by " + p.opened + " opening line" + (p.opened === 1 ? "" : "s") +
+        " carrying " + kg(p.netGrams) + " KG. Every figure on the Stock tab stays exactly as it is." }),
+      el("p", { class:"hint hint-bad", text:
+        "What goes: the individual inward and outward lines before that date, the slips they belong " +
+        "to, and the party history behind them. Those slips cannot be reprinted afterwards, and " +
+        "reports cannot be run for those months." }),
+      drive.configured ? el("p", { class:"hint hint-warn", text:
+        "Google Drive: the merged register replaces what is there rather than being merged into it. " +
+        "Every other phone or computer folds itself to match at its next sync. Do this while nobody " +
+        "else is entering." }) : null,
+      el("p", { class:"hint", text:
+        "A backup downloads first. That file is the only place the removed detail will exist." }),
+      el("label", { text:"Type MERGE to confirm" }), typed,
       el("div", { class:"btn-row", style:"margin-top:14px" }, [
         go, el("button", { class:"btn", type:"button", text:"Cancel", onclick:closeModal })
       ])
@@ -1375,13 +1536,14 @@ function showView(name){
   if(name === "stock")   renderStock();
   if(name === "reports") renderReports();
   if(name === "history") renderHistory();
-  if(name === "setup"){ renderQualities(); renderSlipPanel(); renderPaperPanel(); renderBackupInfo(); renderFreshPanel(); renderPwState(); renderDrivePanel(); }
+  if(name === "setup"){ renderQualities(); renderSlipPanel(); renderPaperPanel(); renderBackupInfo(); renderStorageInfo(); renderCompactPanel(); renderFreshPanel(); renderPwState(); renderDrivePanel(); }
   if(name === "outward" && !$("#outLines .line")) addLine();
 }
 
 function refreshAll(){
   renderHeader();
   renderSync();
+  renderStorageWarning();
   refreshDatalists();
   fillQualitySelect($("#inQuality"), true);
   $$("#outLines .lineQ").forEach(function(s){ fillQualitySelect(s, true); });
@@ -1391,18 +1553,13 @@ function refreshAll(){
   if(!$("#view-stock").hidden)   renderStock();
   if(!$("#view-reports").hidden) renderReports();
   if(!$("#view-history").hidden) renderHistory();
-  if(!$("#view-setup").hidden){ renderQualities(); renderSlipPanel(); renderPaperPanel(); renderBackupInfo(); renderFreshPanel(); renderPwState(); renderDrivePanel(); }
+  if(!$("#view-setup").hidden){ renderQualities(); renderSlipPanel(); renderPaperPanel(); renderBackupInfo(); renderStorageInfo(); renderCompactPanel(); renderFreshPanel(); renderPwState(); renderDrivePanel(); }
 }
 
 function openApp(){
   $("#lock").hidden = true;
   $("#app").hidden = false;
-  if(!Store.storageOK()){
-    var w = $("#storageWarn");
-    w.textContent = Store.storageMessage();
-    w.hidden = false;
-  }
-  refreshAll();
+  refreshAll();            // which puts up the storage warning if there is one
 }
 
 /* ================= start ================= */
@@ -1456,8 +1613,18 @@ function init(){
   $("#printReport").addEventListener("click", printReport);
   $("#reportCsv").addEventListener("click", reportCsv);
 
+  // Changing a filter also starts the count again from the top, so
+  // "Show all" applies to the list the user was actually looking at.
+  var histTimer = null;
   ["hFrom","hTo","hType","hSearch","hVoid"].forEach(function(id){
-    $("#" + id).addEventListener("input", renderHistory);
+    $("#" + id).addEventListener("input", function(){
+      if(histTimer) clearTimeout(histTimer);
+      histTimer = setTimeout(function(){
+        histTimer = null;
+        histShowAll = false;
+        renderHistory();
+      }, 160);
+    });
   });
   $("#exportCsv").addEventListener("click", exportCsv);
 
@@ -1477,6 +1644,8 @@ function init(){
   $("#printSample").addEventListener("click", printSample);
 
   $("#backupBtn").addEventListener("click", backup);
+  $("#compactTo").addEventListener("input", renderCompactPreview);
+  $("#compactBtn").addEventListener("click", doCompact);
   $("#restoreBtn").addEventListener("click", function(){ $("#restoreFile").click(); });
   $("#restoreFile").addEventListener("change", function(e){
     if(e.target.files[0]) restore(e.target.files[0]);

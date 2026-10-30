@@ -338,6 +338,33 @@
           <input type="file" id="restoreFile" accept="application/json,.json" hidden>
         </div>
         <p class="hint" id="backupInfo"></p>
+        <p class="hint" id="storageInfo"></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Merge Old Entries</h2>
+        <span class="eyebrow spacer" id="compactCount">&mdash;</span>
+      </div>
+      <div class="panel-body">
+        <p class="hint" style="margin-top:0">
+          Folds every entry up to a chosen date into one opening line per quality and colour.
+          The stock figures do not change. It is for a register that has grown large &mdash;
+          normally once a year, on the closing date of the old book.
+        </p>
+        <div class="notice notice-warn" style="margin:0 0 12px">
+          <strong>The detail before that date is removed, not marked deleted.</strong>
+          Slips from before it cannot be reprinted, and reports cannot be run for those months.
+          A backup is downloaded first, and that file is the only way back.
+        </div>
+        <div class="grid">
+          <div><label for="compactTo">Merge everything up to</label><input id="compactTo" type="date"></div>
+        </div>
+        <p class="hint" id="compactPreview"></p>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn-danger" type="button" id="compactBtn">Merge entries up to this date</button>
+        </div>
       </div>
     </div>
 

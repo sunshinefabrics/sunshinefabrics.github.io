@@ -69,8 +69,8 @@ Three rules the software follows:
 
    To see what has been deleted, tick **Show deleted entries** in History.
 
-   The one exception is **Setup → Start Fresh**, which is the subject of its
-   own section below.
+   The two exceptions are **Setup → Start Fresh** and **Setup → Merge Old
+   Entries**, each the subject of its own section below.
 
 ### Starting the register over
 
@@ -95,6 +95,43 @@ syncs, and says so. The same protection now covers **Restore from Backup**: a
 restored register is not quietly re-filled by the copy sitting in Drive.
 
 Do it while nobody else is entering, and take the backup seriously.
+
+### Merging old entries
+
+**Setup → Merge Old Entries** folds every entry up to a date you choose into a
+single opening line per quality and colour. **The stock figures do not change** —
+each opening line carries exactly the balance the entries behind it left, so
+Stock, the CSV and the totals read the same before and after.
+
+What it is for: a register that has grown large. The Backup panel shows how much
+of the browser's allowance is in use and roughly how many more entries will fit,
+and warns when that gets tight. There is normally room for well over ten
+thousand entries, so this is a once-a-year job at the close of the old book —
+not something to reach for at the first sign of a long list. If History simply
+feels slow, that is a different thing and is already handled; see the note under
+*Day-to-day notes*.
+
+What it costs. The individual lines before that date are **removed, not marked
+deleted**. The slips they belong to cannot be reprinted afterwards, reports
+cannot be run for those months, and the party history behind them goes too. A
+backup downloads first and **that file is the only place the removed detail will
+exist**. The word MERGE has to be typed, as with Start Fresh.
+
+Like Start Fresh and Restore, a merge **replaces** the copy in Drive rather than
+being combined with it — otherwise another device would simply hand back the very
+entries that were just folded. Two things follow:
+
+- It refuses to run while this device still has changes waiting for Drive, and
+  offers to send them up first.
+- Work sitting unsent on **another** device cannot be rescued from here. Do it
+  while nobody else is entering, exactly as with Start Fresh.
+
+Every other phone or computer folds itself to match at its next sync. Merging to
+the same date a second time does nothing.
+
+The opening lines are marked **Opening** in History, and the Reports tab counts
+them as opening stock rather than as goods received — so a report covering the
+date the line was drawn still adds up.
 
 ### Still take backups
 
@@ -181,7 +218,7 @@ under the heading mirrors it.
 | **Connect Google Drive** | Signs in. Pulls whatever is already in Drive and merges it with this device. |
 | **Sync now** | Pushes this device's changes up straight away, without waiting. |
 | **Refresh from Drive** | Pulls the Drive copy and merges it in at once. You should rarely need it — see below. |
-| **Disconnect** | Stops syncing. The register stays on this device. |
+| **Disconnect** | Stops syncing and **withdraws this app's permission**. The register stays on this device. To empty only this device, clear the browser's site data instead — see below. |
 
 - After connecting, it saves by itself a few seconds after each change, and
   again on the way out if the phone is put away mid-entry.
@@ -214,6 +251,31 @@ for good only after 30 days — the software treats a binned file as gone straig
 away rather than carrying on writing to something about to vanish. And if you
 later **restore it from the bin**, you will have two files of the same name and
 the software may pick either; delete one of them.
+
+### If you clear the browser's data
+
+Clearing Chrome's site data wipes the register **on that device** — it lives in
+the browser's own storage. Nothing is lost as long as Drive has it: press
+**Connect** and the device pulls the whole register back. An empty device can
+never overwrite Drive, because it holds nothing the Drive copy has not got, so
+the sync only runs in the safe direction.
+
+Two things to get right.
+
+**Take a backup first.** If Drive was never connected, that browser storage was
+the only copy there was.
+
+**Do not press Disconnect on the way out.** Disconnect withdraws this app's
+permission, and the `drive.file` permission is exactly what lets the software see
+the one file it created. Withdraw it and that file can become invisible to the
+app, which then finds nothing in Drive. It will **not** quietly start a second
+register in that state — it stops and says so, because a register with no entries
+is never written to Drive as a new file. The way out is to press Connect and
+allow the app again. Clearing site data on its own leaves the permission intact,
+which is why it is the safe way round.
+
+If two files of the same name ever do end up in Drive, the software uses the one
+changed most recently and says so in the status line. Delete the spare.
 
 ### Who can actually see the register
 
@@ -330,6 +392,14 @@ Printing happens inside the page itself, so a pop-up blocker cannot stop it.
   Typing `BLAK` offers *"Did you mean BLACK?"*.
 - **A quality in use cannot be removed**, only renamed, so history stays correct.
 - **Printing** is covered in its own section above.
+- **History draws the latest 300 entries** that match the filters. The totals
+  below the table are still worked out over every one of them, and a **Show all**
+  button sits beside the count. Without this a long register would redraw
+  thousands of rows on every letter typed into the search box.
+- **If storage ever fills up**, a red bar says so, and says whether what you have
+  just typed reached Google Drive. Take a backup at once: an entry made in that
+  state is not on the device. The Backup panel shows how much room is left long
+  before it gets that far.
 - **On a phone** the fields are sized so the browser does not zoom the page in
   every time one is tapped, and all six tabs fit across the screen. Add it to
   the home screen and it opens like an app.
