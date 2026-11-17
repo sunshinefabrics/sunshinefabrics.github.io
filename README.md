@@ -388,6 +388,16 @@ Printing happens inside the page itself, so a pop-up blocker cannot stop it.
 
 ## Day-to-day notes
 
+- **Pieces are optional.** Beside **Quantity (KG)** on Inward, Outward and
+  Correct there is a **Pieces** box. Leave it empty if the goods are only
+  counted by weight. It must be a whole number. KG is still what the stock
+  check and the header totals use; pieces are carried alongside it, shown as a
+  **Pieces** column in Stock and History, printed on slips and stock sheets,
+  included in the History CSV, and kept through **Merge Old Entries**. Entries
+  made before pieces existed simply count as none. Outward does not refuse an
+  issue for pieces, only for KG, so a pieces balance can go negative if more
+  pieces are issued than were recorded in.
+
 - **Outward refuses to issue more than you have.** If the goods really are there
   and the inward just has not been typed yet, use **Force Issue** — the slip is
   then marked FORCED so it can be found later.

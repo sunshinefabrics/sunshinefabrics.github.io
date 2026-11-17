@@ -65,6 +65,7 @@
             <div class="hint" id="inColourHint"></div>
           </div>
           <div><label for="inQty" class="req">Quantity (KG)</label><input id="inQty" type="number" step="0.01" min="0.01" inputmode="decimal" required></div>
+          <div><label for="inPcs">Pieces</label><input id="inPcs" type="number" step="1" min="0" inputmode="numeric" placeholder="optional"></div>
           <div class="grid-full"><label for="inRemarks">Remarks</label><textarea id="inRemarks" rows="2"></textarea></div>
         </div>
         <div id="inErr" class="notice notice-bad" hidden style="margin-top:12px"></div>
@@ -104,7 +105,7 @@
       <div class="panel-body">
         <div class="notice notice-ok" style="margin:0">
           <strong>Slip <span id="lastSlipNo"></span> saved.</strong>
-          <span class="num" id="lastSlipTotal"></span> KG.
+          <span class="num" id="lastSlipTotal"></span> KG<span class="num" id="lastSlipPcs"></span>.
           <div class="btn-row" style="margin-top:9px">
             <button class="btn" type="button" id="printLast">Print Slip (A5)</button>
             <button class="btn" type="button" id="printLastRoll">Print Receipt</button>

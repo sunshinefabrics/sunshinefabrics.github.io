@@ -9,7 +9,7 @@
 (function (global) {
 "use strict";
 
-var kg = Store.kg, toGrams = Store.toGrams, norm = Store.norm,
+var kg = Store.kg, toGrams = Store.toGrams, toPcs = Store.toPcs, norm = Store.norm,
     todayISO = Store.todayISO, dmy = Store.dmy;
 
 function $(s, r){ return (r||document).querySelector(s); }
@@ -34,6 +34,11 @@ function toast(msg){
   var t = $("#toast");
   t.textContent = msg; t.classList.add("show");
   clearTimeout(t._h); t._h = setTimeout(function(){ t.classList.remove("show"); }, 2600);
+}
+
+/* " · 12 pcs" when there are pieces, nothing when there are none */
+function pcsText(n, lead){
+  return n ? ((lead === undefined ? " · " : lead) + n + " pcs") : "";
 }
 
 function showError(box, msgs){
@@ -178,7 +183,8 @@ function colourFeedback(){
   if(s && s.exact){
     hint.textContent = ownerOpen()
       ? "In stock for " + $("#inQuality").value + ": " +
-        kg(Store.availableGrams($("#inQuality").value, v)) + " KG"
+        kg(Store.availableGrams($("#inQuality").value, v)) + " KG" +
+        pcsText(Store.availablePieces($("#inQuality").value, v))
       : "Known colour.";
     hint.className = "hint hint-ok";
   }else if(s){
@@ -199,6 +205,7 @@ function submitInward(ev){
       quality = $("#inQuality").value,
       colour = norm($("#inColour").value),
       grams = toGrams($("#inQty").value),
+      pcs = toPcs($("#inPcs").value),
       errs = [];
 
   if(!date) errs.push("Date is required.");
@@ -206,19 +213,20 @@ function submitInward(ev){
   if(!quality) errs.push("Select a quality.");
   if(!colour) errs.push("Colour is required.");
   if(!Number.isFinite(grams) || grams <= 0) errs.push("Quantity must be more than zero.");
+  if(Number.isNaN(pcs)) errs.push("Pieces must be a whole number, or left empty.");
 
   showError($("#inErr"), errs);
   if(errs.length) return;
 
-  Store.addInward({ date:date, quality:quality, colour:colour, grams:grams,
+  Store.addInward({ date:date, quality:quality, colour:colour, grams:grams, pcs:pcs,
                     party:$("#inParty").value, remarks:$("#inRemarks").value });
 
   // every field belonging to one entry is cleared, colour included
-  $("#inColour").value = ""; $("#inQty").value = ""; $("#inRemarks").value = "";
+  $("#inColour").value = ""; $("#inQty").value = ""; $("#inPcs").value = ""; $("#inRemarks").value = "";
   $("#inColourHint").textContent = "";
   $("#inColour").focus();
 
-  toast("Inward saved — " + kg(grams) + " KG " + quality + " " + colour);
+  toast("Inward saved — " + kg(grams) + " KG" + pcsText(pcs) + " " + quality + " " + colour);
 }
 
 /* ================= outward ================= */
@@ -227,6 +235,7 @@ function addLine(){
   var qSel = el("select", { class:"lineQ" }); fillQualitySelect(qSel);
   var cIn = el("input", { class:"lineC", list:"colourList", autocomplete:"off", placeholder:"Colour" });
   var kIn = el("input", { class:"lineK", type:"number", step:"0.01", min:"0.01", inputmode:"decimal", placeholder:"0.00" });
+  var pIn = el("input", { class:"linePcs", type:"number", step:"1", min:"0", inputmode:"numeric", placeholder:"optional" });
   var rIn = el("input", { class:"lineR", placeholder:"optional", autocomplete:"off" });
   var avail = el("div", { class:"hint" });
 
@@ -244,6 +253,7 @@ function addLine(){
     el("div", {}, [el("label", { text:"Quality" }), qSel]),
     el("div", {}, [el("label", { text:"Colour" }), cIn, avail]),
     el("div", {}, [el("label", { text:"Quantity (KG)" }), kIn]),
+    el("div", {}, [el("label", { text:"Pieces" }), pIn]),
     el("div", {}, [el("label", { text:"Remarks" }), rIn])
   ]));
   $("#outLines").appendChild(line);
@@ -260,7 +270,7 @@ function updateAvail(line, box){
       c = norm($(".lineC", line).value),
       want = toGrams($(".lineK", line).value) || 0;
   if(!c){ box.textContent = ""; box.className = "hint"; return; }
-  var have = Store.availableGrams(q, c);
+  var have = Store.availableGrams(q, c), havePcs = Store.availablePieces(q, c);
   if(have <= 0){
     box.textContent = "No stock recorded for this quality / colour.";
     box.className = "hint hint-bad";
@@ -268,7 +278,7 @@ function updateAvail(line, box){
     box.textContent = "Only " + kg(have) + " KG available — short by " + kg(want-have) + " KG.";
     box.className = "hint hint-bad";
   }else{
-    box.textContent = "Available: " + kg(have) + " KG";
+    box.textContent = "Available: " + kg(have) + " KG" + pcsText(havePcs);
     box.className = "hint hint-ok";
   }
 }
@@ -285,6 +295,7 @@ function readLines(){
       quality: $(".lineQ", l).value,
       colour: norm($(".lineC", l).value),
       grams: toGrams($(".lineK", l).value),
+      pcs: toPcs($(".linePcs", l).value),
       remarks: $(".lineR", l).value.trim()
     };
   });
@@ -302,6 +313,7 @@ function submitOutward(ev){
     var tag = "Item " + (i+1) + ": ";
     if(!l.colour) errs.push(tag + "colour is required.");
     if(!Number.isFinite(l.grams) || l.grams <= 0) errs.push(tag + "quantity must be more than zero.");
+    if(Number.isNaN(l.pcs)) errs.push(tag + "pieces must be a whole number, or left empty.");
   });
 
   if(!errs.length){
@@ -349,10 +361,11 @@ function commitSlip(lines, date, forced){
   $("#lastSlipPanel").hidden = false;
   $("#lastSlipNo").textContent = res.slipNo;
   $("#lastSlipTotal").textContent = kg(res.grams);
+  $("#lastSlipPcs").textContent = pcsText(res.pcs, ", ");
   $("#printLast").onclick     = function(){ printSlip(res.slipId, "a5"); };
   $("#printLastRoll").onclick = function(){ printSlip(res.slipId, paper() === "58" ? "58" : "80"); };
 
-  toast("Slip " + res.slipNo + " saved — " + kg(res.grams) + " KG");
+  toast("Slip " + res.slipNo + " saved — " + kg(res.grams) + " KG" + pcsText(res.pcs));
 }
 
 /* ================= stock ================= */
@@ -366,11 +379,12 @@ function renderStock(){
   t.appendChild(el("thead", {}, [el("tr", {}, [
     el("th", { text:"Quality" }), el("th", { text:"Colour" }),
     el("th", { class:"r", text:"Received" }), el("th", { class:"r", text:"Issued" }),
-    el("th", { class:"r", text:"Balance" }), el("th", { text:"Actions" })
+    el("th", { class:"r", text:"Balance" }), el("th", { class:"r", text:"Pieces" }),
+    el("th", { text:"Actions" })
   ])]));
 
   if(!rows.length){
-    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"6" }, [
+    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"7" }, [
       el("div", { class:"empty", text: term ? "Nothing matches that search." : "No stock recorded yet." })])])]));
     return;
   }
@@ -383,6 +397,7 @@ function renderStock(){
       el("td", { class:"r", text:kg(r.in) }),
       el("td", { class:"r", text:kg(r.out) }),
       el("td", { class:"r " + (r.bal < 0 ? "neg" : ""), text:kg(r.bal) }),
+      el("td", { class:"r " + (r.pcs < 0 ? "neg" : (r.pcs ? "" : "muted")), text: (r.pcsIn || r.pcsOut) ? String(r.pcs) : "—" }),
       el("td", { class:"btn-row" }, [
         el("button", { class:"btn-danger btn-sm", type:"button", text:"Delete",
           onclick:function(){ openDeleteStockLine(r); } })
@@ -392,14 +407,15 @@ function renderStock(){
   t.appendChild(tb);
 
   var tot = rows.reduce(function(a, r){
-    return { in:a.in+r.in, out:a.out+r.out, bal:a.bal+r.bal };
-  }, { in:0, out:0, bal:0 });
+    return { in:a.in+r.in, out:a.out+r.out, bal:a.bal+r.bal, pcs:a.pcs+r.pcs };
+  }, { in:0, out:0, bal:0, pcs:0 });
 
   t.appendChild(el("tfoot", {}, [el("tr", {}, [
     el("td", { colspan:"2", text:"Total — " + rows.length + " item" + (rows.length === 1 ? "" : "s") }),
     el("td", { class:"r", text:kg(tot.in) }),
     el("td", { class:"r", text:kg(tot.out) }),
     el("td", { class:"r " + (tot.bal < 0 ? "neg" : ""), text:kg(tot.bal) }),
+    el("td", { class:"r " + (tot.pcs < 0 ? "neg" : ""), text:String(tot.pcs) }),
     el("td")
   ])]));
 }
@@ -615,11 +631,11 @@ function renderHistory(){
   t.appendChild(el("thead", {}, [el("tr", {}, [
     el("th", { text:"Date" }), el("th", { text:"Type" }), el("th", { text:"Slip" }),
     el("th", { text:"Quality" }), el("th", { text:"Colour" }), el("th", { class:"r", text:"KG" }),
-    el("th", { text:"Party" }), el("th", { text:"Actions" })
+    el("th", { class:"r", text:"Pcs" }), el("th", { text:"Party" }), el("th", { text:"Actions" })
   ])]));
 
   if(!rows.length){
-    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"8" }, [
+    t.appendChild(el("tbody", {}, [el("tr", {}, [el("td", { colspan:"9" }, [
       el("div", { class:"empty", text:"No entries match these filters." })])])]));
     return;
   }
@@ -655,6 +671,7 @@ function renderHistory(){
       el("td", {}, [el("span", { class: e.voidedAt ? "strike" : "", text:e.quality })]),
       el("td", { text:e.colour }),
       el("td", { class:"r", text:kg(e.grams) }),
+      el("td", { class:"r" + (e.pcs ? "" : " muted"), text: e.pcs ? String(e.pcs) : "—" }),
       el("td", { class:"muted", text:e.party || "—" }),
       actions
     ]));
@@ -663,6 +680,9 @@ function renderHistory(){
 
   var net = all.reduce(function(s, e){
     return s + (e.voidedAt ? 0 : (e.type === "IN" ? e.grams : -e.grams));
+  }, 0);
+  var netPcs = all.reduce(function(s, e){
+    return s + (e.voidedAt ? 0 : ((e.type === "IN" ? 1 : -1) * (e.pcs || 0)));
   }, 0);
 
   var label = capped
@@ -676,6 +696,7 @@ function renderHistory(){
         onclick:function(){ histShowAll = true; renderHistory(); } })
     ] : [el("span", { text: label })]),
     el("td", { class:"r " + (net < 0 ? "neg" : ""), text:kg(net) }),
+    el("td", { class:"r " + (netPcs < 0 ? "neg" : ""), text:String(netPcs) }),
     el("td", { colspan:"2" })
   ])]));
 }
@@ -723,7 +744,7 @@ function openDeleteEntry(id){
   if(!e || e.voidedAt) return;
   deleteModal({
     title: "Delete entry",
-    what: (e.type === "IN" ? "Inward " : "Outward ") + kg(e.grams) + " KG — " +
+    what: (e.type === "IN" ? "Inward " : "Outward ") + kg(e.grams) + " KG" + pcsText(e.pcs) + " — " +
           e.quality + " " + e.colour + " dated " + dmy(e.date) + ".",
     warn: e.slipId ? "This is one item off slip " + e.slipNo + ". The rest of the slip stays." : null,
     button: "Delete entry",
@@ -738,7 +759,7 @@ function openDeleteSlip(slipId){
   var open = sl.lines - sl.gone;
   deleteModal({
     title: "Delete slip " + (sl.slipNo == null ? "" : sl.slipNo),
-    what: open + " item" + (open === 1 ? "" : "s") + ", " + kg(sl.grams) + " KG, issued to " +
+    what: open + " item" + (open === 1 ? "" : "s") + ", " + kg(sl.grams) + " KG" + pcsText(sl.pcs, ", ") + ", issued to " +
           (sl.party || "no customer named") + " on " + dmy(sl.date) + ".",
     warn: open > 1 ? "The whole slip goes — all " + open + " items of it. To take out one item only, use Delete beside that line in History." : null,
     button: "Delete whole slip",
@@ -751,7 +772,8 @@ function openDeleteStockLine(r){
   deleteModal({
     title: "Delete " + r.quality + " " + r.colour,
     what: (r.n === 1 ? "One entry makes up this line — " : r.n + " entries make up this line — ") +
-          kg(r.in) + " KG received, " + kg(r.out) + " KG issued, " + kg(r.bal) + " KG in hand.",
+          kg(r.in) + " KG received, " + kg(r.out) + " KG issued, " + kg(r.bal) + " KG in hand" +
+          ((r.pcsIn || r.pcsOut) ? " (" + r.pcs + " pcs)" : "") + ".",
     warn: "Every one of them goes, the inward as well as the outward, not just the balance. Slips carrying this colour will show those lines as deleted.",
     button: r.n === 1 ? "Delete the entry" : "Delete all " + r.n + " entries",
     run: function(x){ return Store.voidStockLine(r.quality, r.colour, x || "Stock line deleted"); },
@@ -766,6 +788,8 @@ function openCorrect(id){
   var dIn = el("input", { type:"date", value:e.date });
   var cIn = el("input", { list:"colourList", value:e.colour, autocomplete:"off" });
   var kIn = el("input", { type:"number", step:"0.01", min:"0.01", inputmode:"decimal", value:kg(e.grams) });
+  var pIn = el("input", { type:"number", step:"1", inputmode:"numeric", placeholder:"optional",
+                          min: (e.pcs || 0) < 0 ? null : "0", value: e.pcs ? String(e.pcs) : "" });
   var err = el("div", { class:"notice notice-bad", hidden:"hidden", style:"margin:12px 0 0" });
 
   openModal([
@@ -777,18 +801,21 @@ function openCorrect(id){
         el("div", {}, [el("label", { text:"Date" }), dIn]),
         el("div", {}, [el("label", { text:"Quality" }), qSel]),
         el("div", {}, [el("label", { text:"Colour" }), cIn]),
-        el("div", {}, [el("label", { text:"Quantity (KG)" }), kIn])
+        el("div", {}, [el("label", { text:"Quantity (KG)" }), kIn]),
+        el("div", {}, [el("label", { text:"Pieces" }), pIn])
       ]),
       err,
       el("div", { class:"btn-row", style:"margin-top:14px" }, [
         el("button", { class:"btn-primary", type:"button", text:"Save correction", onclick:function(){
-          var grams = toGrams(kIn.value), colour = norm(cIn.value), msgs = [];
+          var grams = toGrams(kIn.value), colour = norm(cIn.value), msgs = [],
+              pcs = toPcs(pIn.value, (e.pcs || 0) < 0);
           if(!dIn.value) msgs.push("Date is required.");
           if(!colour) msgs.push("Colour is required.");
           if(!Number.isFinite(grams) || grams <= 0) msgs.push("Quantity must be more than zero.");
+          if(Number.isNaN(pcs)) msgs.push("Pieces must be a whole number, or left empty.");
           showError(err, msgs);
           if(msgs.length) return;
-          Store.correctEntry(id, { date:dIn.value, quality:qSel.value, colour:colour, grams:grams });
+          Store.correctEntry(id, { date:dIn.value, quality:qSel.value, colour:colour, grams:grams, pcs:pcs });
           closeModal(); toast("Correction saved");
         }}),
         el("button", { class:"btn", type:"button", text:"Cancel", onclick:closeModal })
@@ -1104,12 +1131,12 @@ function csvCell(v){
 
 function exportCsv(){
   var rows = historyRows();
-  var head = ["Date","Type","Status","Slip No.","Quality","Colour","Quantity KG","Party","Remarks"];
+  var head = ["Date","Type","Status","Slip No.","Quality","Colour","Quantity KG","Pieces","Party","Remarks"];
   var body = rows.map(function(e){
     return [e.date, e.type === "IN" ? "Inward" : "Outward",
             e.voidedAt ? "DELETED" : (e.forced ? "FORCED" : "Active"),
             e.slipNo == null ? "" : e.slipNo,
-            e.quality, e.colour, kg(e.grams), e.party, e.remarks].map(csvCell).join(",");
+            e.quality, e.colour, kg(e.grams), e.pcs || 0, e.party, e.remarks].map(csvCell).join(",");
   });
   download("dualward-register-" + todayISO() + ".csv",
            "﻿" + [head.map(csvCell).join(",")].concat(body).join("\r\n"),
@@ -1210,10 +1237,11 @@ function slipData(slipId){
     party: first.party || "—",
     forced: rows.some(function(e){ return e.forced; }),
     items: rows.map(function(e){
-      return { quality:e.quality, colour:e.colour, qty:kg(e.grams),
+      return { quality:e.quality, colour:e.colour, qty:kg(e.grams), pcs:e.pcs || 0,
                remarks:e.remarks || "", gone:!!e.voidedAt };
     }),
-    total: kg(rows.reduce(function(s, e){ return s + (e.voidedAt ? 0 : e.grams); }, 0))
+    total: kg(rows.reduce(function(s, e){ return s + (e.voidedAt ? 0 : e.grams); }, 0)),
+    totalPcs: rows.reduce(function(s, e){ return s + (e.voidedAt ? 0 : (e.pcs || 0)); }, 0)
   };
 }
 
@@ -1225,6 +1253,7 @@ function slipA5(d){
       el("td", { text: it.quality + (it.gone ? " (DELETED)" : "") }),
       el("td", { text:it.colour }),
       el("td", { class:"r", text: it.gone ? "DELETED" : it.qty }),
+      el("td", { class:"r", text: it.gone ? "" : (it.pcs ? String(it.pcs) : "—") }),
       el("td", { text:it.remarks || "—" })
     ]));
   });
@@ -1239,11 +1268,12 @@ function slipA5(d){
     el("table", {}, [
       el("thead", {}, [el("tr", {}, [
         el("th", { text:"No." }), el("th", { text:"Quality" }), el("th", { text:"Colour" }),
-        el("th", { class:"r", text:"Qty (KG)" }), el("th", { text:"Remarks" })
+        el("th", { class:"r", text:"Qty (KG)" }), el("th", { class:"r", text:"Pcs" }),
+        el("th", { text:"Remarks" })
       ])]),
       tb
     ]),
-    el("div", { class:"total", text:"Final Total: " + d.total + " KG" }),
+    el("div", { class:"total", text:"Final Total: " + d.total + " KG" + pcsText(d.totalPcs) }),
     d.forced ? el("div", { class:"hint", text:"Issued against short stock (forced)." }) : null,
     d.note   ? el("div", { class:"hint", text:d.note }) : null,
     el("div", { class:"sign" }, [
@@ -1261,6 +1291,7 @@ function slipRoll(d){
         el("span", { class: it.gone ? "gone" : "", text:it.colour }),
         el("span", { text: it.gone ? "DELETED" : it.qty + " KG" })
       ]),
+      (it.pcs && !it.gone) ? el("div", { class:"sml", style:"padding-left:9px", text:it.pcs + " pcs" }) : null,
       it.remarks ? el("div", { class:"sml", style:"padding-left:9px", text:it.remarks }) : null
     ]));
   });
@@ -1276,6 +1307,7 @@ function slipRoll(d){
     body,
     el("hr"),
     el("div", { class:"sum" }, [el("span", { text:"TOTAL" }), el("span", { text:d.total + " KG" })]),
+    d.totalPcs ? el("div", { class:"sum" }, [el("span", { text:"PIECES" }), el("span", { text:d.totalPcs + " pcs" })]) : null,
     el("div", { class:"mid sml", text: open + " item" + (open === 1 ? "" : "s") }),
     d.forced ? el("div", { class:"mid sml", text:"ISSUED AGAINST SHORT STOCK" }) : null,
     d.note   ? el("div", { class:"mid sml", text:d.note }) : null,
@@ -1297,6 +1329,7 @@ function printSlip(slipId, size){
 function printStock(){
   var rows = Store.stockRows(), size = paper();
   var tot = rows.reduce(function(s, r){ return s + r.bal; }, 0);
+  var totPcs = rows.reduce(function(s, r){ return s + r.pcs; }, 0);
 
   if(size === "a5"){
     var tb = el("tbody");
@@ -1304,7 +1337,8 @@ function printStock(){
       tb.appendChild(el("tr", {}, [
         el("td", { text:r.quality }), el("td", { text:r.colour }),
         el("td", { class:"r", text:kg(r.in) }), el("td", { class:"r", text:kg(r.out) }),
-        el("td", { class:"r", text:kg(r.bal) })
+        el("td", { class:"r", text:kg(r.bal) }),
+        el("td", { class:"r", text: (r.pcsIn || r.pcsOut) ? String(r.pcs) : "—" })
       ]));
     });
     doPrint(el("div", { class:"slip" }, [
@@ -1314,11 +1348,11 @@ function printStock(){
         el("thead", {}, [el("tr", {}, [
           el("th", { text:"Quality" }), el("th", { text:"Colour" }),
           el("th", { class:"r", text:"Received" }), el("th", { class:"r", text:"Issued" }),
-          el("th", { class:"r", text:"Balance" })
+          el("th", { class:"r", text:"Balance" }), el("th", { class:"r", text:"Pcs" })
         ])]),
         tb
       ]),
-      el("div", { class:"total", text:"Total Balance: " + kg(tot) + " KG" })
+      el("div", { class:"total", text:"Total Balance: " + kg(tot) + " KG" + pcsText(totPcs) })
     ]), "a5");
     return;
   }
@@ -1329,7 +1363,8 @@ function printStock(){
   rows.forEach(function(r){
     body.appendChild(el("div", { class:"item" }, [
       el("div", { class:"nm", text:r.quality }),
-      el("div", { class:"qt" }, [el("span", { text:r.colour }), el("span", { text:kg(r.bal) + " KG" })])
+      el("div", { class:"qt" }, [el("span", { text:r.colour }), el("span", { text:kg(r.bal) + " KG" })]),
+      (r.pcsIn || r.pcsOut) ? el("div", { class:"sml", style:"padding-left:9px", text:r.pcs + " pcs" }) : null
     ]));
   });
 
@@ -1341,6 +1376,7 @@ function printStock(){
     rows.length ? body : el("div", { class:"mid sml", text:"Nothing in stock." }),
     el("hr"),
     el("div", { class:"sum" }, [el("span", { text:"TOTAL" }), el("span", { text:kg(tot) + " KG" })]),
+    totPcs ? el("div", { class:"sum" }, [el("span", { text:"PIECES" }), el("span", { text:totPcs + " pcs" })]) : null,
     el("div", { class:"mid sml", text: rows.length + " line" + (rows.length === 1 ? "" : "s") }),
     el("div", { class:"mid sml", style:"margin-top:7px", text:printedStamp() })
   ]), size);
@@ -1357,10 +1393,11 @@ function printSample(){
     forced: false,
     note: "Test print. Nothing was saved to the register.",
     items: [
-      { quality:"COTTON 60s", colour:"BLACK",    qty:"125.50", remarks:"",          gone:false },
-      { quality:"RAYON SLUB", colour:"SKY BLUE", qty:"40.00",  remarks:"two rolls", gone:false }
+      { quality:"COTTON 60s", colour:"BLACK",    qty:"125.50", pcs:20, remarks:"",          gone:false },
+      { quality:"RAYON SLUB", colour:"SKY BLUE", qty:"40.00",  pcs:8,  remarks:"two rolls", gone:false }
     ],
-    total: "165.50"
+    total: "165.50",
+    totalPcs: 28
   }), size);
 }
 

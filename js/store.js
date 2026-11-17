@@ -41,6 +41,23 @@ function toGrams(v){
   var n = parseFloat(v);
   return Number.isFinite(n) ? Math.round(n*1000) : NaN;
 }
+/* Pieces are an optional whole-number count kept beside the KG figure.
+   Blank means none (0). Anything that is not a whole number is NaN, so
+   the screen can refuse it instead of quietly saving a wrong count.
+   allowNeg exists only for merged opening lines, which can carry a
+   negative piece balance forward. */
+function toPcs(v, allowNeg){
+  var t = String(v == null ? "" : v).trim();
+  if(t === "") return 0;
+  if(!/^-?\d+$/.test(t)) return NaN;
+  var n = parseInt(t, 10);
+  if(n < 0 && !allowNeg) return NaN;
+  return Number.isFinite(n) ? n : NaN;
+}
+/* The piece count of an entry, signed the way its KG is: in is plus,
+   out is minus. Entries made before pieces existed count as none. */
+function signedPcs(e){ return (e.type === "IN" ? 1 : -1) * (e.pcs || 0); }
+
 /* "BLACK ", "black" and "BLACK" must not become three stock rows. */
 function norm(s){ return String(s==null?"":s).trim().replace(/\s+/g," ").toUpperCase(); }
 
@@ -279,12 +296,13 @@ function stockRows(){
   var m = new Map();
   live().forEach(function(e){
     var k = e.quality + "\u0000" + e.colour, r = m.get(k);
-    if(!r){ r = { quality:e.quality, colour:e.colour, in:0, out:0, n:0 }; m.set(k,r); }
+    if(!r){ r = { quality:e.quality, colour:e.colour, in:0, out:0, n:0, pcsIn:0, pcsOut:0 }; m.set(k,r); }
     r.n++;
-    if(e.type === "IN") r.in += e.grams; else r.out += e.grams;
+    if(e.type === "IN"){ r.in += e.grams; r.pcsIn += (e.pcs || 0); }
+    else               { r.out += e.grams; r.pcsOut += (e.pcs || 0); }
   });
   return Array.from(m.values()).map(function(r){
-    r.bal = r.in - r.out; return r;
+    r.bal = r.in - r.out; r.pcs = r.pcsIn - r.pcsOut; return r;
   }).sort(function(a,b){
     return a.quality.localeCompare(b.quality) || a.colour.localeCompare(b.colour);
   });
@@ -294,6 +312,14 @@ function availableGrams(quality, colour){
   var bal = 0;
   live().forEach(function(e){
     if(e.quality === quality && e.colour === colour) bal += (e.type === "IN" ? e.grams : -e.grams);
+  });
+  return bal;
+}
+
+function availablePieces(quality, colour){
+  var bal = 0;
+  live().forEach(function(e){
+    if(e.quality === quality && e.colour === colour) bal += signedPcs(e);
   });
   return bal;
 }
@@ -422,7 +448,7 @@ function suggestColour(value){
 function newEntry(fields){
   var now = new Date().toISOString();
   return Object.assign({
-    id: uid(), type:"IN", date:"", quality:"", colour:"", grams:0,
+    id: uid(), type:"IN", date:"", quality:"", colour:"", grams:0, pcs:0,
     party:"", remarks:"", slipNo:null, slipId:null,
     createdAt: now, updatedAt: now,
     voidedAt:null, voidReason:"", correctsId:null, forced:false, note:"",
@@ -434,7 +460,7 @@ function newEntry(fields){
 
 function addInward(f){
   var e = newEntry({ type:"IN", date:f.date, quality:f.quality, colour:norm(f.colour),
-                     grams:f.grams, party:norm(f.party), remarks:(f.remarks||"").trim() });
+                     grams:f.grams, pcs:f.pcs || 0, party:norm(f.party), remarks:(f.remarks||"").trim() });
   db.entries.push(e);
   rememberQuality(e.quality);
   persist();
@@ -454,14 +480,16 @@ function addSlip(lines, meta){
   var party = norm(meta.party);
   lines.forEach(function(l){
     db.entries.push(newEntry({
-      type:"OUT", date:meta.date, quality:l.quality, colour:norm(l.colour), grams:l.grams,
+      type:"OUT", date:meta.date, quality:l.quality, colour:norm(l.colour), grams:l.grams, pcs:l.pcs || 0,
       party:party, remarks:(l.remarks||"").trim(), slipNo:slipNo, slipId:slipId,
       createdAt:now, updatedAt:now, forced: !!meta.forced
     }));
     rememberQuality(l.quality);
   });
   persist();
-  return { slipNo:slipNo, slipId:slipId, grams: lines.reduce(function(s,l){ return s+l.grams; },0) };
+  return { slipNo:slipNo, slipId:slipId,
+           grams: lines.reduce(function(s,l){ return s+l.grams; },0),
+           pcs:   lines.reduce(function(s,l){ return s+(l.pcs || 0); },0) };
 }
 
 function voidEntry(id, reason){
@@ -513,11 +541,11 @@ function recentSlips(limit){
     var s = m.get(e.slipId);
     if(!s){
       s = { slipId:e.slipId, slipNo:e.slipNo, date:e.date, party:e.party,
-            forced:false, lines:0, gone:0, grams:0 };
+            forced:false, lines:0, gone:0, grams:0, pcs:0 };
       m.set(e.slipId, s);
     }
     s.lines++;
-    if(e.voidedAt) s.gone++; else s.grams += e.grams;
+    if(e.voidedAt) s.gone++; else { s.grams += e.grams; s.pcs += (e.pcs || 0); }
     if(e.forced) s.forced = true;
   });
   var all = Array.from(m.values()).reverse();
@@ -531,7 +559,7 @@ function correctEntry(id, fields){
   var now = new Date().toISOString();
   e.voidedAt = now; e.updatedAt = now; e.voidReason = "Replaced by a correction";
   var fixed = Object.assign({}, e, {
-    id: uid(), date:fields.date, quality:fields.quality, colour:norm(fields.colour), grams:fields.grams,
+    id: uid(), date:fields.date, quality:fields.quality, colour:norm(fields.colour), grams:fields.grams, pcs:fields.pcs || 0,
     createdAt: now, updatedAt: now, voidedAt:null, voidReason:"", correctsId: e.id, note:"",
     device: deviceId()
   });
@@ -812,15 +840,18 @@ function planCompact(cutoffISO){
   folded.forEach(function(e){
     if(e.voidedAt) return;      // never counted, so it carries nothing forward
     var k = e.quality + "\u0000" + e.colour;
-    bal.set(k, (bal.get(k) || 0) + (e.type === "IN" ? e.grams : -e.grams));
+    var b = bal.get(k) || { g:0, p:0 };
+    b.g += (e.type === "IN" ? e.grams : -e.grams);
+    b.p += signedPcs(e);
+    bal.set(k, b);
   });
 
   var lines = [], net = 0;
-  bal.forEach(function(grams, k){
-    if(!grams) return;          // nothing left on hand, so nothing to carry
+  bal.forEach(function(b, k){
+    if(!b.g && !b.p) return;    // nothing left on hand, so nothing to carry
     var parts = k.split("\u0000");
-    lines.push({ quality:parts[0], colour:parts[1], grams:grams });
-    net += grams;
+    lines.push({ quality:parts[0], colour:parts[1], grams:b.g, pcs:b.p });
+    net += b.g;
   });
   lines.sort(function(a,b){
     return a.quality.localeCompare(b.quality) || a.colour.localeCompare(b.colour);
@@ -855,14 +886,18 @@ function compact(cutoffISO){
 
   var now = new Date().toISOString();
   var opening = p.lines.map(function(l){
+    // Held as a positive weight either way, so History, the printed
+    // sheet and the CSV read it like any other line. A line with no
+    // weight left but pieces on hand takes its direction from the pieces.
+    var isIn = l.grams > 0 || (l.grams === 0 && l.pcs > 0);
     return {
       id: uid(),
-      // Held as a positive weight either way, so History, the printed
-      // sheet and the CSV read it like any other line.
-      type: l.grams > 0 ? "IN" : "OUT",
+      type: isIn ? "IN" : "OUT",
       date: p.cutoff,
       quality: l.quality, colour: l.colour,
       grams: Math.abs(l.grams),
+      // signed to match the type, so the line's piece balance is exact
+      pcs: isIn ? l.pcs : -l.pcs,
       party: "", remarks: "Opening balance",
       slipNo: null, slipId: null,
       createdAt: now, updatedAt: now,
@@ -966,6 +1001,7 @@ global.Store = {
   stockRows: stockRows,
   recentSlips: recentSlips,
   availableGrams: availableGrams,
+  availablePieces: availablePieces,
   totals: totals,
   knownColours: knownColours,
   knownParties: knownParties,
@@ -1008,7 +1044,7 @@ global.Store = {
   storageUsage: storageUsage,
 
   // helpers shared with the UI
-  uid: uid, kg: kg, toGrams: toGrams, norm: norm, todayISO: todayISO, dmy: dmy
+  uid: uid, kg: kg, toGrams: toGrams, toPcs: toPcs, norm: norm, todayISO: todayISO, dmy: dmy
 };
 
 })(window);
